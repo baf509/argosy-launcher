@@ -2,6 +2,11 @@
 .env
 *.env.local
 
+# Signing
+keystore.properties
+*.jks
+*.keystore
+
 # Android/Gradle
 *.iml
 .gradle/
