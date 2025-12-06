@@ -6,24 +6,21 @@ import androidx.lifecycle.viewModelScope
 import com.nendo.argosy.data.download.DownloadManager
 import com.nendo.argosy.data.download.DownloadState
 import com.nendo.argosy.data.emulator.EmulatorDetector
-import com.nendo.argosy.data.emulator.EmulatorRegistry
-import com.nendo.argosy.data.emulator.GameLauncher
 import com.nendo.argosy.data.emulator.InstalledEmulator
 import com.nendo.argosy.data.emulator.LaunchResult
-import com.nendo.argosy.data.emulator.PlaySessionTracker
 import com.nendo.argosy.data.local.dao.EmulatorConfigDao
 import com.nendo.argosy.data.local.dao.GameDao
 import com.nendo.argosy.data.local.dao.PlatformDao
-import com.nendo.argosy.data.local.entity.EmulatorConfigEntity
 import com.nendo.argosy.data.local.entity.GameEntity
-import com.nendo.argosy.data.remote.romm.RomMRepository
-import com.nendo.argosy.data.remote.romm.RomMResult
 import com.nendo.argosy.data.repository.GameRepository
+import com.nendo.argosy.domain.usecase.download.DownloadGameUseCase
+import com.nendo.argosy.domain.usecase.download.DownloadResult
+import com.nendo.argosy.domain.usecase.game.ConfigureEmulatorUseCase
+import com.nendo.argosy.domain.usecase.game.LaunchGameUseCase
 import com.nendo.argosy.ui.input.InputHandler
 import com.nendo.argosy.ui.navigation.GameNavigationContext
-import com.nendo.argosy.ui.notification.NotificationDuration
 import com.nendo.argosy.ui.notification.NotificationManager
-import com.nendo.argosy.ui.notification.NotificationType
+import com.nendo.argosy.ui.notification.showError
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -95,14 +92,14 @@ class GameDetailViewModel @Inject constructor(
     private val gameDao: GameDao,
     private val platformDao: PlatformDao,
     private val emulatorConfigDao: EmulatorConfigDao,
-    private val gameLauncher: GameLauncher,
     private val emulatorDetector: EmulatorDetector,
-    private val playSessionTracker: PlaySessionTracker,
     private val downloadManager: DownloadManager,
-    private val romMRepository: RomMRepository,
     private val notificationManager: NotificationManager,
     private val gameRepository: GameRepository,
-    private val gameNavigationContext: GameNavigationContext
+    private val gameNavigationContext: GameNavigationContext,
+    private val downloadGameUseCase: DownloadGameUseCase,
+    private val launchGameUseCase: LaunchGameUseCase,
+    private val configureEmulatorUseCase: ConfigureEmulatorUseCase
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(GameDetailUiState())
@@ -201,45 +198,11 @@ class GameDetailViewModel @Inject constructor(
 
     fun downloadGame() {
         viewModelScope.launch {
-            val game = gameDao.getById(currentGameId) ?: return@launch
-            val rommId = game.rommId ?: run {
-                showError("Game not synced from RomM")
-                return@launch
-            }
-
-            when (val result = romMRepository.getRom(rommId)) {
-                is RomMResult.Success -> {
-                    val rom = result.data
-                    val fileName = rom.fileName ?: "${game.title}.rom"
-
-                    val ext = fileName.substringAfterLast('.', "").lowercase()
-                    if (ext in INVALID_ROM_EXTENSIONS) {
-                        showError("Invalid ROM file type: .$ext")
-                        return@launch
-                    }
-
-                    downloadManager.enqueueDownload(
-                        gameId = currentGameId,
-                        rommId = rommId,
-                        fileName = fileName,
-                        gameTitle = game.title,
-                        platformSlug = rom.platformSlug,
-                        coverPath = game.coverPath,
-                        expectedSizeBytes = rom.fileSize
-                    )
-                }
-                is RomMResult.Error -> {
-                    showError("Failed to get ROM info: ${result.message}")
-                }
+            when (val result = downloadGameUseCase(currentGameId)) {
+                is DownloadResult.Queued -> { }
+                is DownloadResult.Error -> notificationManager.showError(result.message)
             }
         }
-    }
-
-    companion object {
-        private val INVALID_ROM_EXTENSIONS = setOf(
-            "png", "jpg", "jpeg", "gif", "webp", "bmp",
-            "html", "htm", "txt", "md", "pdf"
-        )
     }
 
     fun primaryAction() {
@@ -261,22 +224,18 @@ class GameDetailViewModel @Inject constructor(
         viewModelScope.launch {
             val game = _uiState.value.game ?: return@launch
 
-            when (val result = gameLauncher.launch(currentGameId)) {
+            when (val result = launchGameUseCase(currentGameId)) {
                 is LaunchResult.Success -> {
-                    playSessionTracker.startSession(
-                        gameId = currentGameId,
-                        emulatorPackage = result.intent.`package` ?: ""
-                    )
                     _launchEvents.emit(LaunchEvent.Launch(result.intent))
                 }
                 is LaunchResult.NoEmulator -> {
-                    showError("No emulator installed for ${game.platformName}")
+                    notificationManager.showError("No emulator installed for ${game.platformName}")
                 }
                 is LaunchResult.NoRomFile -> {
-                    showError("ROM file not found. Download required.")
+                    notificationManager.showError("ROM file not found. Download required.")
                 }
                 is LaunchResult.Error -> {
-                    showError(result.message)
+                    notificationManager.showError(result.message)
                 }
             }
         }
@@ -351,19 +310,7 @@ class GameDetailViewModel @Inject constructor(
             val gameId = currentGameId
             val game = gameDao.getById(gameId) ?: return@launch
 
-            emulatorConfigDao.deleteGameOverride(gameId)
-
-            if (emulator != null) {
-                val config = EmulatorConfigEntity(
-                    platformId = game.platformId,
-                    gameId = gameId,
-                    packageName = emulator.def.packageName,
-                    displayName = emulator.def.displayName,
-                    coreName = EmulatorRegistry.getRetroArchCores()[game.platformId],
-                    isDefault = false
-                )
-                emulatorConfigDao.insert(config)
-            }
+            configureEmulatorUseCase.setForGame(gameId, game.platformId, emulator)
 
             _uiState.update { it.copy(showEmulatorPicker = false) }
             loadGame(gameId)
@@ -423,17 +370,8 @@ class GameDetailViewModel @Inject constructor(
         )
     }
 
-    private fun showError(message: String) {
-        notificationManager.show(
-            title = "Error",
-            subtitle = message,
-            type = NotificationType.ERROR,
-            duration = NotificationDuration.SHORT
-        )
-    }
-
     fun showLaunchError(message: String) {
-        showError(message)
+        notificationManager.showError(message)
     }
 
     fun createInputHandler(

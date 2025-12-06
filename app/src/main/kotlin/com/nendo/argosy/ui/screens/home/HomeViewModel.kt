@@ -2,8 +2,6 @@ package com.nendo.argosy.ui.screens.home
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.nendo.argosy.data.download.DownloadManager
-import com.nendo.argosy.data.emulator.GameLauncher
 import com.nendo.argosy.data.emulator.LaunchResult
 import com.nendo.argosy.data.local.dao.GameDao
 import com.nendo.argosy.data.local.dao.PlatformDao
@@ -11,13 +9,15 @@ import com.nendo.argosy.data.local.entity.GameEntity
 import com.nendo.argosy.data.local.entity.PlatformEntity
 import com.nendo.argosy.data.preferences.UserPreferencesRepository
 import com.nendo.argosy.data.remote.romm.RomMRepository
-import com.nendo.argosy.data.remote.romm.RomMResult
-import com.nendo.argosy.ui.notification.NotificationProgress
+import com.nendo.argosy.domain.usecase.download.DownloadGameUseCase
+import com.nendo.argosy.domain.usecase.download.DownloadResult
+import com.nendo.argosy.domain.usecase.game.LaunchGameUseCase
+import com.nendo.argosy.domain.usecase.sync.SyncLibraryResult
+import com.nendo.argosy.domain.usecase.sync.SyncLibraryUseCase
 import com.nendo.argosy.ui.input.InputHandler
 import com.nendo.argosy.ui.navigation.GameNavigationContext
-import com.nendo.argosy.ui.notification.NotificationDuration
 import com.nendo.argosy.ui.notification.NotificationManager
-import com.nendo.argosy.ui.notification.NotificationType
+import com.nendo.argosy.ui.notification.showError
 import android.content.Intent
 import android.util.Log
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -114,9 +114,10 @@ class HomeViewModel @Inject constructor(
     private val romMRepository: RomMRepository,
     private val preferencesRepository: UserPreferencesRepository,
     private val notificationManager: NotificationManager,
-    private val downloadManager: DownloadManager,
-    private val gameLauncher: GameLauncher,
-    private val gameNavigationContext: GameNavigationContext
+    private val gameNavigationContext: GameNavigationContext,
+    private val syncLibraryUseCase: SyncLibraryUseCase,
+    private val downloadGameUseCase: DownloadGameUseCase,
+    private val launchGameUseCase: LaunchGameUseCase
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(HomeUiState())
@@ -341,48 +342,27 @@ class HomeViewModel @Inject constructor(
 
     private fun queueDownload(gameId: Long) {
         viewModelScope.launch {
-            val game = gameDao.getById(gameId) ?: return@launch
-            val rommId = game.rommId ?: run {
-                showError("Game not synced from RomM")
-                return@launch
-            }
-
-            when (val result = romMRepository.getRom(rommId)) {
-                is RomMResult.Success -> {
-                    val rom = result.data
-                    val fileName = rom.fileName ?: "${game.title}.rom"
-
-                    downloadManager.enqueueDownload(
-                        gameId = gameId,
-                        rommId = rommId,
-                        fileName = fileName,
-                        gameTitle = game.title,
-                        platformSlug = rom.platformSlug,
-                        coverPath = game.coverPath,
-                        expectedSizeBytes = rom.fileSize
-                    )
-                }
-                is RomMResult.Error -> {
-                    showError("Failed to get ROM info: ${result.message}")
-                }
+            when (val result = downloadGameUseCase(gameId)) {
+                is DownloadResult.Queued -> { }
+                is DownloadResult.Error -> notificationManager.showError(result.message)
             }
         }
     }
 
     fun launchGame(gameId: Long) {
         viewModelScope.launch {
-            when (val result = gameLauncher.launch(gameId)) {
+            when (val result = launchGameUseCase(gameId)) {
                 is LaunchResult.Success -> {
                     _launchEvents.emit(HomeLaunchEvent.Launch(result.intent))
                 }
                 is LaunchResult.NoEmulator -> {
-                    showError("No emulator installed for this platform")
+                    notificationManager.showError("No emulator installed for this platform")
                 }
                 is LaunchResult.NoRomFile -> {
-                    showError("ROM file not found")
+                    notificationManager.showError("ROM file not found")
                 }
                 is LaunchResult.Error -> {
-                    showError(result.message)
+                    notificationManager.showError(result.message)
                 }
             }
         }
@@ -390,109 +370,15 @@ class HomeViewModel @Inject constructor(
 
     fun syncFromRomm() {
         viewModelScope.launch {
-            Log.d(TAG, "syncFromRomm: starting")
-            romMRepository.initialize()
-            if (!romMRepository.isConnected()) {
-                Log.d(TAG, "syncFromRomm: not connected")
-                showError("RomM not connected")
-                return@launch
+            when (val result = syncLibraryUseCase(initializeFirst = true)) {
+                is SyncLibraryResult.Error -> notificationManager.showError(result.message)
+                is SyncLibraryResult.Success -> { }
             }
-
-            Log.d(TAG, "syncFromRomm: fetching summary")
-            when (val summary = romMRepository.getLibrarySummary()) {
-                is RomMResult.Error -> {
-                    Log.e(TAG, "syncFromRomm: summary error: ${summary.message}")
-                    showError(summary.message)
-                    return@launch
-                }
-                is RomMResult.Success -> {
-                    val (platformCount, _) = summary.data
-                    Log.d(TAG, "syncFromRomm: got $platformCount platforms, showing persistent")
-                    notificationManager.showPersistent(
-                        title = "Syncing from Rom Manager",
-                        subtitle = "Starting...",
-                        key = "romm-sync",
-                        progress = NotificationProgress(0, platformCount)
-                    )
-
-                    try {
-                        withContext(NonCancellable) {
-                            Log.d(TAG, "syncFromRomm: calling syncLibrary")
-                            val result = romMRepository.syncLibrary { current, total, platform ->
-                                Log.d(TAG, "syncFromRomm: progress $current/$total - $platform")
-                                notificationManager.updatePersistent(
-                                    key = "romm-sync",
-                                    subtitle = platform,
-                                    progress = NotificationProgress(current, total)
-                                )
-                            }
-
-                            Log.d(TAG, "syncFromRomm: syncLibrary returned - added=${result.gamesAdded}, updated=${result.gamesUpdated}, errors=${result.errors}")
-
-                            if (result.errors.isEmpty()) {
-                                Log.d(TAG, "syncFromRomm: completing with success")
-                                notificationManager.completePersistent(
-                                    key = "romm-sync",
-                                    title = "Sync complete",
-                                    subtitle = "${result.gamesAdded} added, ${result.gamesUpdated} updated",
-                                    type = NotificationType.SUCCESS
-                                )
-                            } else {
-                                Log.d(TAG, "syncFromRomm: completing with errors")
-                                notificationManager.completePersistent(
-                                    key = "romm-sync",
-                                    title = "Sync completed with errors",
-                                    subtitle = "${result.errors.size} platform(s) failed",
-                                    type = NotificationType.ERROR
-                                )
-                            }
-                        }
-                    } catch (e: Exception) {
-                        Log.e(TAG, "syncFromRomm: exception", e)
-                        withContext(NonCancellable) {
-                            notificationManager.completePersistent(
-                                key = "romm-sync",
-                                title = "Sync failed",
-                                subtitle = e.message,
-                                type = NotificationType.ERROR
-                            )
-                        }
-                    }
-                }
-            }
-            Log.d(TAG, "syncFromRomm: done")
         }
     }
 
-    private fun showError(message: String) {
-        notificationManager.show(
-            title = "Error",
-            subtitle = message,
-            type = NotificationType.ERROR,
-            duration = NotificationDuration.SHORT
-        )
-    }
-
-    private fun showSuccess(message: String) {
-        notificationManager.show(
-            title = message,
-            type = NotificationType.SUCCESS,
-            duration = NotificationDuration.SHORT
-        )
-    }
-
-    private fun showInfo(message: String) {
-        notificationManager.show(
-            title = message,
-            type = NotificationType.INFO,
-            duration = NotificationDuration.SHORT,
-            key = "home-status",
-            immediate = false
-        )
-    }
-
     fun showLaunchError(message: String) {
-        showError(message)
+        notificationManager.showError(message)
     }
 
     private fun PlatformEntity.toUi() = HomePlatformUi(
