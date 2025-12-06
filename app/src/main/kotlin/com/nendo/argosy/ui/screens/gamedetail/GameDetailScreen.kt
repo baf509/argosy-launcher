@@ -62,7 +62,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
 import com.nendo.argosy.data.emulator.InstalledEmulator
-import com.nendo.argosy.ui.components.FooterHint
+import com.nendo.argosy.ui.components.FooterBar
 import com.nendo.argosy.ui.components.InputButton
 import com.nendo.argosy.ui.input.LocalInputDispatcher
 import kotlinx.coroutines.flow.collectLatest
@@ -406,29 +406,21 @@ private fun GameDetailContent(
             }
         }
 
-        Row(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .background(Color.Black.copy(alpha = 0.8f))
-                .padding(horizontal = 24.dp, vertical = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(24.dp)
-        ) {
-            FooterHint(button = InputButton.DPAD_VERTICAL, action = "Scroll")
-            FooterHint(button = InputButton.DPAD_HORIZONTAL, action = "Change Game")
-            Spacer(modifier = Modifier.width(12.dp))
-            FooterHint(
-                button = InputButton.A,
-                action = when (uiState.downloadStatus) {
+        FooterBar(
+            hints = listOf(
+                InputButton.DPAD_VERTICAL to "Scroll",
+                InputButton.DPAD_HORIZONTAL to "Change Game",
+                InputButton.A to when (uiState.downloadStatus) {
                     GameDownloadStatus.DOWNLOADED -> "Play"
                     GameDownloadStatus.NOT_DOWNLOADED -> "Download"
                     GameDownloadStatus.QUEUED -> "Queued"
                     GameDownloadStatus.DOWNLOADING -> "Downloading"
-                }
-            )
-            FooterHint(button = InputButton.B, action = "Back")
-            FooterHint(button = InputButton.Y, action = "Favorite")
-        }
+                },
+                InputButton.B to "Back",
+                InputButton.Y to "Favorite"
+            ),
+            modifier = Modifier.align(Alignment.BottomCenter)
+        )
 
         AnimatedVisibility(
             visible = uiState.showMoreOptions,

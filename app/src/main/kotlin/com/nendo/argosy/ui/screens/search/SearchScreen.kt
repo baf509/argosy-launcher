@@ -40,7 +40,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
-import com.nendo.argosy.ui.components.FooterHint
+import com.nendo.argosy.ui.components.FooterBar
 import com.nendo.argosy.ui.components.InputButton
 import com.nendo.argosy.ui.input.LocalInputDispatcher
 
@@ -309,27 +309,21 @@ private fun LoadingState() {
 
 @Composable
 private fun SearchFooter(resultCount: Int) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surfaceVariant)
-            .padding(horizontal = 24.dp, vertical = 12.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-            FooterHint(button = InputButton.DPAD, action = "Navigate")
-            FooterHint(button = InputButton.A, action = "Select")
-            FooterHint(button = InputButton.B, action = "Back/Clear")
-        }
-
-        if (resultCount > 0) {
-            Text(
-                text = "$resultCount results",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-    }
+    FooterBar(
+        hints = listOf(
+            InputButton.DPAD to "Navigate",
+            InputButton.A to "Select",
+            InputButton.B to "Back/Clear"
+        ),
+        trailingContent = if (resultCount > 0) {
+            {
+                Text(
+                    text = "$resultCount results",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        } else null
+    )
 }
 

@@ -78,7 +78,6 @@ import com.nendo.argosy.ui.components.ActionPreference
 import com.nendo.argosy.ui.components.ColorPickerPreference
 import com.nendo.argosy.ui.components.CyclePreference
 import com.nendo.argosy.ui.components.FooterBar
-import com.nendo.argosy.ui.components.FooterHint
 import com.nendo.argosy.ui.components.InputButton
 import com.nendo.argosy.ui.components.InfoPreference
 import com.nendo.argosy.ui.components.NavigationPreference
@@ -774,14 +773,13 @@ private fun RegionPickerPopup(
 
             Spacer(modifier = Modifier.height(Dimens.spacingSm))
 
-            Row(
-                modifier = Modifier.align(Alignment.CenterHorizontally),
-                horizontalArrangement = Arrangement.spacedBy(Dimens.spacingLg)
-            ) {
-                FooterHint(button = InputButton.DPAD, action = "Navigate")
-                FooterHint(button = InputButton.A, action = "Toggle")
-                FooterHint(button = InputButton.B, action = "Close")
-            }
+            FooterBar(
+                hints = listOf(
+                    InputButton.DPAD to "Navigate",
+                    InputButton.A to "Toggle",
+                    InputButton.B to "Close"
+                )
+            )
         }
     }
 }
@@ -1207,14 +1205,13 @@ private fun EmulatorPickerPopup(
 
             Spacer(modifier = Modifier.height(Dimens.spacingSm))
 
-            Row(
-                modifier = Modifier.align(Alignment.CenterHorizontally),
-                horizontalArrangement = Arrangement.spacedBy(Dimens.spacingLg)
-            ) {
-                FooterHint(button = InputButton.DPAD, action = "Navigate")
-                FooterHint(button = InputButton.A, action = "Select")
-                FooterHint(button = InputButton.B, action = "Close")
-            }
+            FooterBar(
+                hints = listOf(
+                    InputButton.DPAD to "Navigate",
+                    InputButton.A to "Select",
+                    InputButton.B to "Close"
+                )
+            )
         }
     }
 }

@@ -49,7 +49,6 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.nendo.argosy.ui.theme.Dimens
 import com.nendo.argosy.data.model.GameSource
 import com.nendo.argosy.ui.components.FooterBar
-import com.nendo.argosy.ui.components.FooterHint
 import com.nendo.argosy.ui.components.InputButton
 import com.nendo.argosy.ui.icons.InputIcons
 import com.nendo.argosy.ui.components.GameCard
@@ -466,15 +465,14 @@ private fun FilterMenuOverlay(
 
             Spacer(modifier = Modifier.height(Dimens.spacingSm))
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(Dimens.spacingLg, Alignment.CenterHorizontally)
-            ) {
-                FooterHint(button = InputButton.DPAD, action = "Navigate")
-                FooterHint(button = InputButton.A, action = if (isMultiSelect) "Toggle" else "Select")
-                FooterHint(button = InputButton.Y, action = "Reset")
-                FooterHint(button = InputButton.B, action = "Close")
-            }
+            FooterBar(
+                hints = listOf(
+                    InputButton.DPAD to "Navigate",
+                    InputButton.Y to "Reset",
+                    InputButton.A to if (isMultiSelect) "Toggle" else "Select",
+                    InputButton.B to "Close"
+                )
+            )
         }
     }
 }

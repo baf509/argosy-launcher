@@ -27,6 +27,17 @@ enum class InputButton {
     START, SELECT
 }
 
+private enum class HintCategory { DPAD, SHOULDER_MENU, FACE }
+
+private fun InputButton.category(): HintCategory = when (this) {
+    InputButton.DPAD, InputButton.DPAD_UP, InputButton.DPAD_DOWN,
+    InputButton.DPAD_LEFT, InputButton.DPAD_RIGHT,
+    InputButton.DPAD_HORIZONTAL, InputButton.DPAD_VERTICAL -> HintCategory.DPAD
+    InputButton.LB, InputButton.RB, InputButton.LT, InputButton.RT,
+    InputButton.START, InputButton.SELECT -> HintCategory.SHOULDER_MENU
+    InputButton.A, InputButton.B, InputButton.X, InputButton.Y -> HintCategory.FACE
+}
+
 @Composable
 private fun InputButton.toPainter(): Painter {
     val nintendoLayout = LocalNintendoLayout.current
@@ -83,26 +94,51 @@ fun FooterHint(
     }
 }
 
+private fun InputButton.faceButtonPriority(): Int = when (this) {
+    InputButton.Y -> 0
+    InputButton.X -> 1
+    InputButton.B -> 2
+    InputButton.A -> 3
+    else -> 0
+}
+
 @Composable
 fun FooterBar(
     hints: List<Pair<InputButton, String>>,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    trailingContent: @Composable (() -> Unit)? = null
 ) {
+    val dpadHints = hints.filter { it.first.category() == HintCategory.DPAD }
+    val shoulderHints = hints.filter { it.first.category() == HintCategory.SHOULDER_MENU }
+    val faceHints = hints.filter { it.first.category() == HintCategory.FACE }
+        .sortedBy { it.first.faceButtonPriority() }
+
     Row(
         modifier = modifier
             .fillMaxWidth()
             .background(MaterialTheme.colorScheme.surfaceVariant)
             .padding(horizontal = Dimens.spacingLg, vertical = Dimens.spacingSm + Dimens.spacingXs),
-        horizontalArrangement = Arrangement.spacedBy(Dimens.spacingLg)
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        var lastWasDpad = false
-        hints.forEachIndexed { index, (button, action) ->
-            val isDpad = button.isDpadButton()
-            if (index > 0 && lastWasDpad && !isDpad) {
-                Spacer(modifier = Modifier.width(Dimens.spacingLg))
+        Row(horizontalArrangement = Arrangement.spacedBy(Dimens.spacingLg)) {
+            dpadHints.forEach { (button, action) ->
+                FooterHint(button = button, action = action)
             }
-            FooterHint(button = button, action = action)
-            lastWasDpad = isDpad
+        }
+
+        Spacer(modifier = Modifier.weight(1f))
+
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(Dimens.spacingLg),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            shoulderHints.forEach { (button, action) ->
+                FooterHint(button = button, action = action)
+            }
+            faceHints.forEach { (button, action) ->
+                FooterHint(button = button, action = action)
+            }
+            trailingContent?.invoke()
         }
     }
 }
