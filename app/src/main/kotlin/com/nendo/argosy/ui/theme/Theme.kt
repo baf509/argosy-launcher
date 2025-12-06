@@ -12,6 +12,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.nendo.argosy.BuildConfig
 import com.nendo.argosy.data.preferences.ThemeMode
 
 private fun colorToHsv(color: Color): FloatArray {
@@ -146,19 +147,21 @@ fun ALauncherTheme(
         ThemeMode.SYSTEM -> isSystemInDarkTheme()
     }
 
+    val defaultPrimary = if (BuildConfig.DEBUG) ALauncherColors.Orange else ALauncherColors.Indigo
+    val defaultPrimaryDark = if (BuildConfig.DEBUG) ALauncherColors.OrangeDark else ALauncherColors.IndigoDark
     val primaryColor = themeState.primaryColor?.let { Color(it) }
 
     val colorScheme = if (isDarkTheme) {
         createDarkColorScheme(
-            primary = primaryColor ?: ALauncherColors.Indigo
+            primary = primaryColor ?: defaultPrimary
         )
     } else {
         createLightColorScheme(
-            primary = primaryColor ?: ALauncherColors.IndigoDark
+            primary = primaryColor ?: defaultPrimaryDark
         )
     }
 
-    val focusGlow = (primaryColor ?: ALauncherColors.Indigo).copy(alpha = 0.4f)
+    val focusGlow = (primaryColor ?: defaultPrimary).copy(alpha = 0.4f)
 
     val launcherConfig = LauncherThemeConfig(
         isDarkTheme = isDarkTheme,
