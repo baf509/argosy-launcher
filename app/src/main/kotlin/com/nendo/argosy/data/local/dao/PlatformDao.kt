@@ -40,4 +40,10 @@ interface PlatformDao {
 
     @Query("UPDATE platforms SET isVisible = :visible WHERE id = :platformId")
     suspend fun updateVisibility(platformId: String, visible: Boolean)
+
+    @Query("UPDATE platforms SET logoPath = :path WHERE id = :platformId")
+    suspend fun updateLogoPath(platformId: String, path: String)
+
+    @Query("SELECT * FROM platforms WHERE logoPath LIKE 'http%'")
+    suspend fun getPlatformsWithRemoteLogos(): List<PlatformEntity>
 }

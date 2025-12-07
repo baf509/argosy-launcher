@@ -323,6 +323,7 @@ class RomMRepository @Inject constructor(
         val existing = platformDao.getById(remote.slug)
         val platformDef = PlatformDefinitions.getById(remote.slug)
 
+        val logoUrl = remote.logoUrl?.let { buildMediaUrl(it) }
         val entity = PlatformEntity(
             id = remote.slug,
             name = platformDef?.name ?: remote.name,
@@ -330,7 +331,7 @@ class RomMRepository @Inject constructor(
             romExtensions = platformDef?.extensions?.joinToString(",") ?: "",
             gameCount = remote.romCount,
             isVisible = existing?.isVisible ?: true,
-            logoPath = existing?.logoPath,
+            logoPath = logoUrl ?: existing?.logoPath,
             sortOrder = platformDef?.sortOrder ?: existing?.sortOrder ?: 0,
             lastScanned = existing?.lastScanned
         )
@@ -339,6 +340,11 @@ class RomMRepository @Inject constructor(
             platformDao.insert(entity)
         } else {
             platformDao.update(entity)
+        }
+
+        // Queue logo for caching with black background removal
+        if (logoUrl != null && logoUrl.startsWith("http")) {
+            imageCacheManager.queuePlatformLogoCache(remote.slug, logoUrl)
         }
     }
 

@@ -71,11 +71,18 @@ fun LibraryScreen(
     onGameSelect: (Long) -> Unit,
     onBack: () -> Unit,
     onDrawerToggle: () -> Unit,
+    initialPlatformId: String? = null,
     viewModel: LibraryViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val gridState = rememberLazyGridState(initialFirstVisibleItemIndex = uiState.focusedIndex)
     val scope = rememberCoroutineScope()
+
+    LaunchedEffect(initialPlatformId) {
+        if (initialPlatformId != null) {
+            viewModel.setInitialPlatform(initialPlatformId)
+        }
+    }
 
     LaunchedEffect(uiState.currentPlatformIndex) {
         gridState.scrollToItem(0)

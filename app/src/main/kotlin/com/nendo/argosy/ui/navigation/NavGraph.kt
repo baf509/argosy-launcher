@@ -47,12 +47,24 @@ fun NavGraph(
                 onGameSelect = { gameId ->
                     navController.navigate(Screen.GameDetail.createRoute(gameId))
                 },
+                onNavigateToLibrary = { platformId ->
+                    navController.navigate(Screen.Library.createRoute(platformId))
+                },
                 onDrawerToggle = onDrawerToggle
             )
         }
 
-        composable(Screen.Library.route) {
+        composable(
+            route = Screen.Library.route,
+            arguments = listOf(navArgument("platformId") {
+                type = NavType.StringType
+                nullable = true
+                defaultValue = null
+            })
+        ) { backStackEntry ->
+            val platformId = backStackEntry.arguments?.getString("platformId")
             LibraryScreen(
+                initialPlatformId = platformId,
                 onGameSelect = { gameId ->
                     navController.navigate(Screen.GameDetail.createRoute(gameId))
                 },

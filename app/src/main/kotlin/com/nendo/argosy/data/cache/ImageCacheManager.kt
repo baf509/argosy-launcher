@@ -3,8 +3,10 @@ package com.nendo.argosy.data.cache
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Color
 import android.util.Log
 import com.nendo.argosy.data.local.dao.GameDao
+import com.nendo.argosy.data.local.dao.PlatformDao
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -50,15 +52,23 @@ data class ScreenshotCacheRequest(
     val gameTitle: String = ""
 )
 
+data class PlatformLogoCacheRequest(
+    val platformId: String,
+    val logoUrl: String
+)
+
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 @Singleton
 class ImageCacheManager @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val gameDao: GameDao
+    private val gameDao: GameDao,
+    private val platformDao: PlatformDao
 ) {
     private val cacheDir: File by lazy {
         File(context.cacheDir, "images").also { it.mkdirs() }
     }
+
+    private val logoQueue = Channel<PlatformLogoCacheRequest>(Channel.UNLIMITED)
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val queue = Channel<ImageCacheRequest>(Channel.UNLIMITED)
@@ -306,6 +316,108 @@ class ImageCacheManager @Inject constructor(
                 val urls = game.screenshotPaths?.split(",") ?: return@forEach
                 val rommId = game.rommId ?: return@forEach
                 queueScreenshotCache(game.id, rommId, urls, game.title)
+            }
+        }
+    }
+
+    fun queuePlatformLogoCache(platformId: String, logoUrl: String) {
+        scope.launch {
+            logoQueue.send(PlatformLogoCacheRequest(platformId, logoUrl))
+            startLogoProcessingIfNeeded()
+        }
+    }
+
+    private var isProcessingLogos = false
+
+    private fun startLogoProcessingIfNeeded() {
+        if (isProcessingLogos) return
+        isProcessingLogos = true
+
+        scope.launch {
+            Log.d(TAG, "Starting platform logo cache processing")
+
+            for (request in logoQueue) {
+                try {
+                    processLogoRequest(request)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to process logo for ${request.platformId}: ${e.message}")
+                }
+
+                if (logoQueue.isEmpty) break
+            }
+            isProcessingLogos = false
+        }
+    }
+
+    private suspend fun processLogoRequest(request: PlatformLogoCacheRequest) {
+        val fileName = "logo_${request.platformId}_${request.logoUrl.md5Hash()}.png"
+        val cachedFile = File(cacheDir, fileName)
+
+        if (cachedFile.exists()) {
+            platformDao.updateLogoPath(request.platformId, cachedFile.absolutePath)
+            return
+        }
+
+        val bitmap = downloadBitmap(request.logoUrl) ?: return
+        val transparentBitmap = removeBlackBackground(bitmap)
+        bitmap.recycle()
+
+        FileOutputStream(cachedFile).use { out ->
+            transparentBitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+        }
+        transparentBitmap.recycle()
+
+        Log.d(TAG, "Cached logo for platform ${request.platformId}: ${cachedFile.length() / 1024}KB")
+        platformDao.updateLogoPath(request.platformId, cachedFile.absolutePath)
+    }
+
+    private fun downloadBitmap(url: String): Bitmap? {
+        return try {
+            val connection = URL(url).openConnection()
+            connection.connectTimeout = 10_000
+            connection.readTimeout = 30_000
+            connection.getInputStream().use { inputStream ->
+                BitmapFactory.decodeStream(inputStream)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to download bitmap: ${e.message}")
+            null
+        }
+    }
+
+    private fun removeBlackBackground(source: Bitmap): Bitmap {
+        val width = source.width
+        val height = source.height
+        val result = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+
+        val pixels = IntArray(width * height)
+        source.getPixels(pixels, 0, width, 0, 0, width, height)
+
+        for (i in pixels.indices) {
+            val pixel = pixels[i]
+            val r = Color.red(pixel)
+            val g = Color.green(pixel)
+            val b = Color.blue(pixel)
+
+            // Check if pixel is near-black (threshold of 30 for each channel)
+            if (r < 30 && g < 30 && b < 30) {
+                pixels[i] = Color.TRANSPARENT
+            }
+        }
+
+        result.setPixels(pixels, 0, width, 0, 0, width, height)
+        return result
+    }
+
+    fun resumePendingLogoCache() {
+        scope.launch {
+            val uncached = platformDao.getPlatformsWithRemoteLogos()
+            if (uncached.isEmpty()) return@launch
+
+            Log.d(TAG, "Resuming cache for ${uncached.size} platforms with uncached logos")
+            uncached.forEach { platform ->
+                val url = platform.logoPath ?: return@forEach
+                queuePlatformLogoCache(platform.id, url)
             }
         }
     }

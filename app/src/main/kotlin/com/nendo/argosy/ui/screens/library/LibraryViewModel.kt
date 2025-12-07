@@ -353,6 +353,16 @@ class LibraryViewModel @Inject constructor(
         loadGames()
     }
 
+    fun setInitialPlatform(platformId: String) {
+        val state = _uiState.value
+        val index = state.platforms.indexOfFirst { it.id == platformId }
+        if (index >= 0 && index != state.currentPlatformIndex) {
+            Log.d(TAG, "setInitialPlatform: setting platform to $platformId (index $index)")
+            _uiState.update { it.copy(currentPlatformIndex = index) }
+            loadGames()
+        }
+    }
+
     fun moveFocus(direction: FocusMove) {
         _uiState.update { state ->
             if (state.games.isEmpty()) return@update state

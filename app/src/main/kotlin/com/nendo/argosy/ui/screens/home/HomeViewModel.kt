@@ -66,8 +66,20 @@ data class HomeGameUi(
     val genre: String?,
     val isFavorite: Boolean,
     val isDownloaded: Boolean,
+    val rating: Float? = null,
+    val userRating: Int = 0,
+    val userDifficulty: Int = 0,
     val downloadIndicator: GameDownloadIndicator = GameDownloadIndicator.NONE
 )
+
+sealed class HomeRowItem {
+    data class Game(val game: HomeGameUi) : HomeRowItem()
+    data class ViewAll(
+        val platformId: String,
+        val platformName: String,
+        val logoPath: String?
+    ) : HomeRowItem()
+}
 
 data class HomePlatformUi(
     val id: String,
@@ -84,7 +96,7 @@ sealed class HomeRow {
 
 data class HomeUiState(
     val platforms: List<HomePlatformUi> = emptyList(),
-    val platformGames: List<HomeGameUi> = emptyList(),
+    val platformItems: List<HomeRowItem> = emptyList(),
     val focusedGameIndex: Int = 0,
     val recentGames: List<HomeGameUi> = emptyList(),
     val favoriteGames: List<HomeGameUi> = emptyList(),
@@ -105,15 +117,18 @@ data class HomeUiState(
     val currentPlatform: HomePlatformUi?
         get() = (currentRow as? HomeRow.Platform)?.let { platforms.getOrNull(it.index) }
 
-    val currentGames: List<HomeGameUi>
+    val currentItems: List<HomeRowItem>
         get() = when (currentRow) {
-            HomeRow.Favorites -> favoriteGames
-            is HomeRow.Platform -> platformGames
-            HomeRow.Continue -> recentGames
+            HomeRow.Favorites -> favoriteGames.map { HomeRowItem.Game(it) }
+            is HomeRow.Platform -> platformItems
+            HomeRow.Continue -> recentGames.map { HomeRowItem.Game(it) }
         }
 
+    val focusedItem: HomeRowItem?
+        get() = currentItems.getOrNull(focusedGameIndex)
+
     val focusedGame: HomeGameUi?
-        get() = currentGames.getOrNull(focusedGameIndex)
+        get() = (focusedItem as? HomeRowItem.Game)?.game
 
     val rowTitle: String
         get() = when (currentRow) {
@@ -126,8 +141,9 @@ data class HomeUiState(
         downloadIndicators[gameId] ?: GameDownloadIndicator.NONE
 }
 
-sealed class HomeLaunchEvent {
-    data class Launch(val intent: Intent) : HomeLaunchEvent()
+sealed class HomeEvent {
+    data class LaunchGame(val intent: Intent) : HomeEvent()
+    data class NavigateToLibrary(val platformId: String) : HomeEvent()
 }
 
 @HiltViewModel
@@ -148,8 +164,8 @@ class HomeViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(HomeUiState())
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
 
-    private val _launchEvents = MutableSharedFlow<HomeLaunchEvent>()
-    val launchEvents: SharedFlow<HomeLaunchEvent> = _launchEvents.asSharedFlow()
+    private val _events = MutableSharedFlow<HomeEvent>()
+    val events: SharedFlow<HomeEvent> = _events.asSharedFlow()
 
     private val rowGameIndexes = mutableMapOf<HomeRow, Int>()
     private var platformGamesJob: kotlinx.coroutines.Job? = null
@@ -264,7 +280,7 @@ class HomeViewModel @Inject constructor(
                     currentRow = if (shouldSwitchRow) HomeRow.Platform(0) else state.currentRow
                 )
             }
-            if (platforms.isNotEmpty() && _uiState.value.platformGames.isEmpty()) {
+            if (platforms.isNotEmpty() && _uiState.value.platformItems.isEmpty()) {
                 loadGamesForPlatform(platforms.first().id, platformIndex = 0, setLoadingFalse = true)
             }
         }
@@ -279,8 +295,18 @@ class HomeViewModel @Inject constructor(
         platformGamesJob?.cancel()
         platformGamesJob = viewModelScope.launch {
             var isFirstEmission = true
-            gameDao.observeByPlatform(platformId).collect { games ->
-                val gameUis = games.map { it.toUi() }
+            gameDao.observeByPlatformSorted(platformId, limit = 20).collect { games ->
+                val platform = _uiState.value.platforms.getOrNull(platformIndex)
+                val gameItems: List<HomeRowItem> = games.map { HomeRowItem.Game(it.toUi()) }
+                val items: List<HomeRowItem> = if (platform != null) {
+                    gameItems + HomeRowItem.ViewAll(
+                        platformId = platform.id,
+                        platformName = platform.name,
+                        logoPath = platform.logoPath
+                    )
+                } else {
+                    gameItems
+                }
 
                 _uiState.update { state ->
                     val shouldClearLoading = setLoadingFalse && isFirstEmission
@@ -289,14 +315,14 @@ class HomeViewModel @Inject constructor(
                         val savedIndex = rowGameIndexes[row] ?: 0
                         isFirstEmission = false
                         state.copy(
-                            platformGames = gameUis,
-                            focusedGameIndex = savedIndex.coerceIn(0, (gameUis.size - 1).coerceAtLeast(0)),
+                            platformItems = items,
+                            focusedGameIndex = savedIndex.coerceIn(0, (items.size - 1).coerceAtLeast(0)),
                             isLoading = if (shouldClearLoading) false else state.isLoading
                         )
                     } else {
                         isFirstEmission = false
                         state.copy(
-                            platformGames = gameUis,
+                            platformItems = items,
                             isLoading = if (shouldClearLoading) false else state.isLoading
                         )
                     }
@@ -351,15 +377,15 @@ class HomeViewModel @Inject constructor(
 
     fun nextGame() {
         _uiState.update { state ->
-            if (state.currentGames.isEmpty()) return@update state
-            val nextIndex = (state.focusedGameIndex + 1).coerceAtMost(state.currentGames.size - 1)
+            if (state.currentItems.isEmpty()) return@update state
+            val nextIndex = (state.focusedGameIndex + 1).coerceAtMost(state.currentItems.size - 1)
             state.copy(focusedGameIndex = nextIndex)
         }
     }
 
     fun previousGame() {
         _uiState.update { state ->
-            if (state.currentGames.isEmpty()) return@update state
+            if (state.currentItems.isEmpty()) return@update state
             val prevIndex = (state.focusedGameIndex - 1).coerceAtLeast(0)
             state.copy(focusedGameIndex = prevIndex)
         }
@@ -394,7 +420,9 @@ class HomeViewModel @Inject constructor(
             1 -> toggleFavorite(game.id)
             2 -> {
                 toggleGameMenu()
-                gameNavigationContext.setContext(state.currentGames.map { it.id })
+                gameNavigationContext.setContext(
+                    state.currentItems.filterIsInstance<HomeRowItem.Game>().map { it.game.id }
+                )
                 onGameSelect(game.id)
             }
             3 -> {
@@ -457,7 +485,7 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch {
             when (val result = launchGameUseCase(gameId)) {
                 is LaunchResult.Success -> {
-                    _launchEvents.emit(HomeLaunchEvent.Launch(result.intent))
+                    _events.emit(HomeEvent.LaunchGame(result.intent))
                 }
                 is LaunchResult.NoEmulator -> {
                     notificationManager.showError("No emulator installed for this platform")
@@ -469,6 +497,12 @@ class HomeViewModel @Inject constructor(
                     notificationManager.showError(result.message)
                 }
             }
+        }
+    }
+
+    private fun navigateToLibrary(platformId: String) {
+        viewModelScope.launch {
+            _events.emit(HomeEvent.NavigateToLibrary(platformId))
         }
     }
 
@@ -503,7 +537,10 @@ class HomeViewModel @Inject constructor(
             releaseYear = releaseYear,
             genre = genre,
             isFavorite = isFavorite,
-            isDownloaded = localPath != null
+            isDownloaded = localPath != null,
+            rating = rating,
+            userRating = userRating,
+            userDifficulty = userDifficulty
         )
     }
 
@@ -545,13 +582,20 @@ class HomeViewModel @Inject constructor(
             if (_uiState.value.showGameMenu) {
                 confirmGameMenuSelection(onGameSelect)
             } else {
-                _uiState.value.focusedGame?.let { game ->
-                    val indicator = _uiState.value.downloadIndicatorFor(game.id)
-                    when {
-                        game.isDownloaded -> launchGame(game.id)
-                        indicator.isPaused || indicator.isQueued -> resumeDownload(game.id)
-                        else -> queueDownload(game.id)
+                when (val item = _uiState.value.focusedItem) {
+                    is HomeRowItem.Game -> {
+                        val game = item.game
+                        val indicator = _uiState.value.downloadIndicatorFor(game.id)
+                        when {
+                            game.isDownloaded -> launchGame(game.id)
+                            indicator.isPaused || indicator.isQueued -> resumeDownload(game.id)
+                            else -> queueDownload(game.id)
+                        }
                     }
+                    is HomeRowItem.ViewAll -> {
+                        navigateToLibrary(item.platformId)
+                    }
+                    null -> { }
                 }
             }
             return true

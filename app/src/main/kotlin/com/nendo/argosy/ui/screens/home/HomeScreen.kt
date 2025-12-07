@@ -13,6 +13,7 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,6 +23,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -36,7 +38,10 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.Whatshot
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -54,6 +59,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextAlign
@@ -74,6 +81,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun HomeScreen(
     onGameSelect: (Long) -> Unit,
+    onNavigateToLibrary: (String) -> Unit = {},
     onDrawerToggle: () -> Unit,
     viewModel: HomeViewModel = hiltViewModel()
 ) {
@@ -81,11 +89,11 @@ fun HomeScreen(
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
 
-    LaunchedEffect(uiState.focusedGameIndex, uiState.currentRow, uiState.currentGames.size) {
-        if (uiState.currentGames.isNotEmpty()) {
+    LaunchedEffect(uiState.focusedGameIndex, uiState.currentRow, uiState.currentItems.size) {
+        if (uiState.currentItems.isNotEmpty()) {
             scope.launch {
                 listState.animateScrollToItem(
-                    index = uiState.focusedGameIndex.coerceIn(0, uiState.currentGames.lastIndex),
+                    index = uiState.focusedGameIndex.coerceIn(0, uiState.currentItems.lastIndex),
                     scrollOffset = 100
                 )
             }
@@ -99,9 +107,9 @@ fun HomeScreen(
 
     val context = LocalContext.current
     LaunchedEffect(Unit) {
-        viewModel.launchEvents.collect { event ->
+        viewModel.events.collect { event ->
             when (event) {
-                is HomeLaunchEvent.Launch -> {
+                is HomeEvent.LaunchGame -> {
                     try {
                         android.util.Log.d("HomeScreen", "Starting activity: ${event.intent}")
                         context.startActivity(event.intent)
@@ -110,6 +118,9 @@ fun HomeScreen(
                         android.util.Log.e("HomeScreen", "Failed to start activity", e)
                         viewModel.showLaunchError("Failed to launch: ${e.message}")
                     }
+                }
+                is HomeEvent.NavigateToLibrary -> {
+                    onNavigateToLibrary(event.platformId)
                 }
             }
         }
@@ -171,9 +182,6 @@ fun HomeScreen(
         ) {
             HomeHeader(
                 sectionTitle = uiState.rowTitle,
-                platformLogo = if (uiState.currentRow is HomeRow.Platform) {
-                    uiState.currentPlatform?.logoPath
-                } else null,
                 showPlatformNav = false
             )
 
@@ -188,7 +196,7 @@ fun HomeScreen(
                     uiState.isLoading -> {
                         LoadingState()
                     }
-                    uiState.currentGames.isEmpty() -> {
+                    uiState.currentItems.isEmpty() -> {
                         EmptyState(
                             isRommConfigured = uiState.isRommConfigured,
                             onSync = { viewModel.syncFromRomm() }
@@ -196,7 +204,7 @@ fun HomeScreen(
                     }
                     else -> {
                         GameRail(
-                            games = uiState.currentGames,
+                            items = uiState.currentItems,
                             focusedIndex = uiState.focusedGameIndex,
                             listState = listState,
                             rowKey = uiState.currentRow.toString(),
@@ -209,9 +217,13 @@ fun HomeScreen(
                 GameInfo(
                     title = uiState.focusedGame?.title ?: "",
                     developer = uiState.focusedGame?.developer,
+                    rating = uiState.focusedGame?.rating,
+                    userRating = uiState.focusedGame?.userRating ?: 0,
+                    userDifficulty = uiState.focusedGame?.userDifficulty ?: 0,
                     modifier = Modifier
                         .fillMaxWidth(0.6f)
                         .align(Alignment.TopEnd)
+                        .offset(y = (-32).dp)
                 )
             }
 
@@ -252,7 +264,6 @@ fun HomeScreen(
 @Composable
 private fun HomeHeader(
     sectionTitle: String,
-    platformLogo: String?,
     showPlatformNav: Boolean
 ) {
     val currentTime = remember { mutableLongStateOf(System.currentTimeMillis()) }
@@ -276,26 +287,18 @@ private fun HomeHeader(
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             AnimatedContent(
-                targetState = sectionTitle to platformLogo,
+                targetState = sectionTitle,
                 transitionSpec = {
                     (slideInVertically { -it / 2 } + fadeIn(tween(200))) togetherWith
                             (slideOutVertically { it / 2 } + fadeOut(tween(150)))
                 },
                 label = "section"
-            ) { (title, logo) ->
-                if (logo != null) {
-                    AsyncImage(
-                        model = logo,
-                        contentDescription = title,
-                        modifier = Modifier.height(48.dp)
-                    )
-                } else {
-                    Text(
-                        text = title,
-                        style = MaterialTheme.typography.headlineMedium,
-                        color = Color.White
-                    )
-                }
+            ) { title ->
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = Color.White
+                )
             }
 
             if (showPlatformNav) {
@@ -332,6 +335,9 @@ private fun HomeHeader(
 private fun GameInfo(
     title: String,
     developer: String?,
+    rating: Float?,
+    userRating: Int,
+    userDifficulty: Int,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -354,12 +360,76 @@ private fun GameInfo(
                 color = Color.White.copy(alpha = 0.7f)
             )
         }
+
+        val hasRatings = rating != null || userRating > 0 || userDifficulty > 0
+        if (hasRatings) {
+            Spacer(modifier = Modifier.height(4.dp))
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                if (rating != null) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.People,
+                            contentDescription = null,
+                            tint = Color(0xFF64B5F6),
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Text(
+                            text = "${rating.toInt()}%",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = Color.White.copy(alpha = 0.7f)
+                        )
+                    }
+                }
+                if (userRating > 0) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Star,
+                            contentDescription = null,
+                            tint = Color(0xFFFFD700),
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Text(
+                            text = "$userRating/5",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = Color.White.copy(alpha = 0.7f)
+                        )
+                    }
+                }
+                if (userDifficulty > 0) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Whatshot,
+                            contentDescription = null,
+                            tint = Color(0xFFE53935),
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Text(
+                            text = "$userDifficulty/5",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = Color.White.copy(alpha = 0.7f)
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 
 @Composable
 private fun GameRail(
-    games: List<HomeGameUi>,
+    items: List<HomeRowItem>,
     focusedIndex: Int,
     listState: androidx.compose.foundation.lazy.LazyListState,
     rowKey: String,
@@ -375,21 +445,119 @@ private fun GameRail(
             .fillMaxWidth()
             .height(290.dp)
     ) {
-        itemsIndexed(games, key = { _, game -> "$rowKey-${game.id}" }) { index, game ->
+        itemsIndexed(
+            items,
+            key = { _, item ->
+                when (item) {
+                    is HomeRowItem.Game -> "$rowKey-${item.game.id}"
+                    is HomeRowItem.ViewAll -> "$rowKey-viewall-${item.platformId}"
+                }
+            }
+        ) { index, item ->
             val isFocused = index == focusedIndex
-            GameCard(
-                game = game,
-                isFocused = isFocused,
-                focusScale = 1.8f,
-                scaleFromBottom = true,
-                downloadIndicator = downloadIndicatorFor(game.id),
-                modifier = Modifier
-                    .padding(horizontal = if (isFocused) 64.dp else 0.dp)
-                    .width(120.dp)
-                    .height(160.dp)
+            when (item) {
+                is HomeRowItem.Game -> {
+                    GameCard(
+                        game = item.game,
+                        isFocused = isFocused,
+                        focusScale = 1.8f,
+                        scaleFromBottom = true,
+                        downloadIndicator = downloadIndicatorFor(item.game.id),
+                        modifier = Modifier
+                            .padding(horizontal = if (isFocused) 64.dp else 0.dp)
+                            .width(120.dp)
+                            .height(160.dp)
+                    )
+                }
+                is HomeRowItem.ViewAll -> {
+                    ViewAllCard(
+                        isFocused = isFocused,
+                        modifier = Modifier
+                            .padding(horizontal = if (isFocused) 64.dp else 0.dp)
+                            .width(120.dp)
+                            .height(160.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ViewAllCard(
+    isFocused: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val scale by animateFloatAsState(
+        targetValue = if (isFocused) 1.8f else 1f,
+        animationSpec = spring(stiffness = 300f),
+        label = "viewAllScale"
+    )
+
+    val borderColor by animateColorAsState(
+        targetValue = if (isFocused) Color.White else Color.White.copy(alpha = 0.3f),
+        animationSpec = tween(200),
+        label = "viewAllBorder"
+    )
+
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = modifier
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+                transformOrigin = TransformOrigin(0.5f, 1f)
+            }
+            .background(
+                Brush.verticalGradient(
+                    colors = listOf(
+                        Color.White.copy(alpha = 0.15f),
+                        Color.White.copy(alpha = 0.05f)
+                    )
+                ),
+                RoundedCornerShape(8.dp)
+            )
+            .border(1.dp, borderColor, RoundedCornerShape(8.dp))
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+            modifier = Modifier.padding(12.dp)
+        ) {
+            // 2x2 grid icon
+            Column(
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+                modifier = Modifier.padding(bottom = 12.dp)
+            ) {
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    GridBox()
+                    GridBox()
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    GridBox()
+                    GridBox()
+                }
+            }
+            Text(
+                text = "View All",
+                style = MaterialTheme.typography.labelLarge,
+                color = Color.White.copy(alpha = 0.3f),
+                textAlign = TextAlign.Center
             )
         }
     }
+}
+
+@Composable
+private fun GridBox() {
+    Box(
+        modifier = Modifier
+            .size(24.dp)
+            .background(
+                Color.White.copy(alpha = 0.3f),
+                RoundedCornerShape(4.dp)
+            )
+    )
 }
 
 @Composable

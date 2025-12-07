@@ -16,6 +16,20 @@ interface GameDao {
     @Query("SELECT * FROM games WHERE platformId = :platformId AND isHidden = 0 ORDER BY sortTitle ASC")
     fun observeByPlatform(platformId: String): Flow<List<GameEntity>>
 
+    @Query("""
+        SELECT * FROM games
+        WHERE platformId = :platformId AND isHidden = 0
+        ORDER BY
+            CASE WHEN localPath IS NOT NULL THEN 0 ELSE 1 END,
+            CASE WHEN lastPlayed IS NULL THEN 1 ELSE 0 END,
+            lastPlayed DESC,
+            CASE WHEN rating IS NULL THEN 1 ELSE 0 END,
+            rating DESC,
+            sortTitle ASC
+        LIMIT :limit
+    """)
+    fun observeByPlatformSorted(platformId: String, limit: Int = 20): Flow<List<GameEntity>>
+
     @Query("SELECT * FROM games WHERE isHidden = 0 ORDER BY sortTitle ASC")
     fun observeAll(): Flow<List<GameEntity>>
 
