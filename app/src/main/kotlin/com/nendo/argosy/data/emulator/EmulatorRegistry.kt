@@ -112,6 +112,10 @@ object EmulatorRegistry {
             packageName = "org.citra.citra_emu",
             displayName = "Citra",
             supportedPlatforms = setOf("3ds"),
+            launchConfig = LaunchConfig.Custom(
+                activityClass = "org.citra.citra_emu.activities.EmulationActivity",
+                intentExtras = mapOf("SelectedGame" to ExtraValue.FileUri)
+            ),
             downloadUrl = "https://github.com/citra-emu/citra-android/releases"
         ),
         EmulatorDef(
@@ -119,6 +123,10 @@ object EmulatorRegistry {
             packageName = "org.citra.emu",
             displayName = "Citra MMJ",
             supportedPlatforms = setOf("3ds"),
+            launchConfig = LaunchConfig.Custom(
+                activityClass = "org.citra.emu.activities.EmulationActivity",
+                intentExtras = mapOf("SelectedGame" to ExtraValue.FileUri)
+            ),
             downloadUrl = "https://github.com/weihuoya/citra/releases"
         ),
         EmulatorDef(
@@ -126,6 +134,10 @@ object EmulatorRegistry {
             packageName = "io.github.lime3ds.android",
             displayName = "Lime3DS",
             supportedPlatforms = setOf("3ds"),
+            launchConfig = LaunchConfig.Custom(
+                activityClass = "io.github.lime3ds.android.activities.EmulationActivity",
+                intentExtras = mapOf("SelectedGame" to ExtraValue.FileUri)
+            ),
             downloadUrl = "https://github.com/Lime3DS/Lime3DS/releases"
         ),
         EmulatorDef(
@@ -185,6 +197,10 @@ object EmulatorRegistry {
             packageName = "me.magnum.melonds",
             displayName = "melonDS",
             supportedPlatforms = setOf("nds"),
+            launchConfig = LaunchConfig.Custom(
+                activityClass = "me.magnum.melonds.ui.emulator.EmulatorActivity",
+                intentExtras = mapOf("PATH" to ExtraValue.FilePath)
+            ),
             downloadUrl = "https://play.google.com/store/apps/details?id=me.magnum.melonds"
         ),
         EmulatorDef(
@@ -201,24 +217,19 @@ object EmulatorRegistry {
             supportedPlatforms = setOf("gb", "gbc"),
             downloadUrl = "https://play.google.com/store/apps/details?id=it.dbtecno.pizzaboy"
         ),
-        EmulatorDef(
-            id = "lemuroid",
-            packageName = "com.swordfish.lemuroid",
-            displayName = "Lemuroid",
-            supportedPlatforms = setOf(
-                "nes", "snes", "n64", "gb", "gbc", "gba", "nds",
-                "genesis", "sms", "gg",
-                "psx", "psp",
-                "atari2600", "lynx"
-            ),
-            downloadUrl = "https://play.google.com/store/apps/details?id=com.swordfish.lemuroid"
-        ),
+
+        // NOTE: Lemuroid does NOT support intent launching from external apps
+        // https://github.com/Swordfish90/Lemuroid/issues/803
 
         EmulatorDef(
             id = "duckstation",
             packageName = "com.github.stenzek.duckstation",
             displayName = "DuckStation",
             supportedPlatforms = setOf("psx"),
+            launchConfig = LaunchConfig.Custom(
+                activityClass = "com.github.stenzek.duckstation.EmulationActivity",
+                intentExtras = mapOf("bootPath" to ExtraValue.FileUri)
+            ),
             downloadUrl = "https://play.google.com/store/apps/details?id=com.github.stenzek.duckstation"
         ),
         EmulatorDef(
@@ -355,23 +366,23 @@ object EmulatorRegistry {
         emulators.filter { platformId in it.supportedPlatforms }
 
     fun getRecommendedEmulators(): Map<String, List<String>> = mapOf(
-        "psx" to listOf("duckstation", "retroarch", "retroarch_64", "lemuroid"),
+        "psx" to listOf("duckstation", "retroarch", "retroarch_64"),
         "ps2" to listOf("aethersx2", "pcsx2"),
-        "psp" to listOf("ppsspp_gold", "ppsspp", "retroarch", "retroarch_64", "lemuroid"),
+        "psp" to listOf("ppsspp_gold", "ppsspp", "retroarch", "retroarch_64"),
         "vita" to listOf("vita3k"),
-        "n64" to listOf("mupen64plus_fz", "retroarch", "retroarch_64", "lemuroid"),
-        "nds" to listOf("drastic", "melonds", "retroarch", "retroarch_64", "lemuroid"),
+        "n64" to listOf("mupen64plus_fz", "retroarch", "retroarch_64"),
+        "nds" to listOf("drastic", "melonds", "retroarch", "retroarch_64"),
         "3ds" to listOf("lime3ds", "citra", "citra_mmj"),
         "gc" to listOf("dolphin", "retroarch", "retroarch_64"),
         "ngc" to listOf("dolphin", "retroarch", "retroarch_64"),
         "wii" to listOf("dolphin"),
         "switch" to listOf("citron", "ryujinx", "yuzu", "strato", "eden", "skyline"),
-        "gba" to listOf("pizza_boy_gba", "retroarch", "retroarch_64", "lemuroid"),
-        "gb" to listOf("pizza_boy_gb", "retroarch", "retroarch_64", "lemuroid"),
-        "gbc" to listOf("pizza_boy_gb", "retroarch", "retroarch_64", "lemuroid"),
-        "nes" to listOf("retroarch", "retroarch_64", "lemuroid"),
-        "snes" to listOf("retroarch", "retroarch_64", "lemuroid"),
-        "genesis" to listOf("md_emu", "retroarch", "retroarch_64", "lemuroid"),
+        "gba" to listOf("pizza_boy_gba", "retroarch", "retroarch_64"),
+        "gb" to listOf("pizza_boy_gb", "retroarch", "retroarch_64"),
+        "gbc" to listOf("pizza_boy_gb", "retroarch", "retroarch_64"),
+        "nes" to listOf("retroarch", "retroarch_64"),
+        "snes" to listOf("retroarch", "retroarch_64"),
+        "genesis" to listOf("md_emu", "retroarch", "retroarch_64"),
         "sms" to listOf("md_emu", "retroarch", "retroarch_64"),
         "gg" to listOf("md_emu", "retroarch", "retroarch_64"),
         "scd" to listOf("md_emu", "retroarch", "retroarch_64"),
@@ -383,8 +394,8 @@ object EmulatorRegistry {
         "neogeo" to listOf("fbalpha", "retroarch", "retroarch_64"),
         "dos" to listOf("magic_dosbox", "dosbox_turbo"),
         "scummvm" to listOf("scummvm"),
-        "atari2600" to listOf("retroarch", "retroarch_64", "lemuroid"),
-        "lynx" to listOf("retroarch", "retroarch_64", "lemuroid"),
+        "atari2600" to listOf("retroarch", "retroarch_64"),
+        "lynx" to listOf("retroarch", "retroarch_64"),
         "tg16" to listOf("retroarch", "retroarch_64"),
         "tgcd" to listOf("retroarch", "retroarch_64"),
         "ngp" to listOf("retroarch", "retroarch_64"),
