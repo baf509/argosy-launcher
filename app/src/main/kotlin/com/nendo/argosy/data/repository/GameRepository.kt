@@ -1,13 +1,12 @@
 package com.nendo.argosy.data.repository
 
-import android.content.BroadcastReceiver
 import android.content.Context
-import android.content.Intent
-import android.content.IntentFilter
+import android.os.Build
+import android.os.Environment
 import android.os.UserManager
 import android.util.Log
-import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlin.coroutines.resume
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeoutOrNull
 import com.nendo.argosy.data.local.dao.GameDao
 import com.nendo.argosy.data.local.dao.PlatformDao
 import com.nendo.argosy.data.model.GameSource
@@ -50,36 +49,72 @@ class GameRepository @Inject constructor(
         return if (customPath != null) File(customPath) else defaultDownloadDir
     }
 
-    private fun isUserUnlocked(): Boolean {
-        val userManager = context.getSystemService(Context.USER_SERVICE) as UserManager
-        return userManager.isUserUnlocked
+    private fun isStorageReady(): Boolean {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            val userManager = context.getSystemService(Context.USER_SERVICE) as UserManager
+            if (!userManager.isUserUnlocked) return false
+        }
+        return Environment.getExternalStorageState() == Environment.MEDIA_MOUNTED
     }
 
-    suspend fun awaitUserUnlocked() {
-        if (isUserUnlocked()) {
-            Log.d(TAG, "Device already unlocked, proceeding immediately")
-            return
+    suspend fun awaitStorageReady(timeoutMs: Long = 10_000L): Boolean {
+        if (isStorageReady()) {
+            Log.d(TAG, "Storage already ready")
+            return true
         }
 
-        Log.d(TAG, "Device not unlocked, waiting for ACTION_USER_UNLOCKED")
-        suspendCancellableCoroutine { continuation ->
-            val receiver = object : BroadcastReceiver() {
-                override fun onReceive(ctx: Context?, intent: Intent?) {
-                    Log.d(TAG, "Received ACTION_USER_UNLOCKED")
-                    context.unregisterReceiver(this)
-                    continuation.resume(Unit)
-                }
+        Log.d(TAG, "Storage not ready, waiting up to ${timeoutMs}ms")
+
+        return withTimeoutOrNull(timeoutMs) {
+            while (!isStorageReady()) {
+                delay(500)
             }
-            context.registerReceiver(receiver, IntentFilter(Intent.ACTION_USER_UNLOCKED))
-            continuation.invokeOnCancellation {
-                try {
-                    context.unregisterReceiver(receiver)
-                } catch (_: Exception) {}
+            true
+        } ?: run {
+            Log.w(TAG, "Timeout waiting for storage")
+            false
+        }
+    }
+
+    suspend fun discoverLocalFiles(): Int = withContext(Dispatchers.IO) {
+        if (!isStorageReady()) {
+            Log.w(TAG, "discoverLocalFiles: storage not ready, skipping")
+            return@withContext 0
+        }
+
+        val downloadDir = getDownloadDir()
+        val gamesWithoutPath = gameDao.getGamesWithRommIdButNoPath()
+        if (gamesWithoutPath.isEmpty()) return@withContext 0
+
+        var discovered = 0
+        for (game in gamesWithoutPath) {
+            val platformDir = File(downloadDir, game.platformId)
+            if (!platformDir.exists()) continue
+
+            val candidates = platformDir.listFiles { f -> f.isFile && !f.name.endsWith(".tmp") } ?: continue
+            val titleLower = game.title.lowercase()
+
+            val match = candidates.find { file ->
+                val name = file.nameWithoutExtension.lowercase()
+                name == titleLower || name.contains(titleLower) || titleLower.contains(name)
+            }
+
+            if (match != null) {
+                gameDao.updateLocalPath(game.id, match.absolutePath, GameSource.ROMM_SYNCED)
+                discovered++
+                Log.d(TAG, "Discovered: ${game.title} -> ${match.name}")
             }
         }
+
+        Log.d(TAG, "Discovery complete: $discovered files found")
+        discovered
     }
 
     suspend fun validateLocalFiles(): Int = withContext(Dispatchers.IO) {
+        if (!isStorageReady()) {
+            Log.w(TAG, "validateLocalFiles: storage not ready, skipping")
+            return@withContext 0
+        }
 
         val gamesWithPaths = gameDao.getGamesWithLocalPath()
         var invalidated = 0

@@ -66,12 +66,23 @@ class ArgosyViewModel @Inject constructor(
 
     private fun scheduleDownloadValidation() {
         viewModelScope.launch {
-            gameRepository.awaitUserUnlocked()
-            validateAndRecoverDownloads()
+            val ready = gameRepository.awaitStorageReady(timeoutMs = 10_000L)
+            if (ready) {
+                validateAndRecoverDownloads()
+            } else {
+                android.util.Log.w("ArgosyViewModel", "Storage not ready after timeout, scheduling retry")
+                kotlinx.coroutines.delay(30_000L)
+                scheduleDownloadValidation()
+            }
         }
     }
 
     private suspend fun validateAndRecoverDownloads() {
+        val discovered = gameRepository.discoverLocalFiles()
+        if (discovered > 0) {
+            android.util.Log.d("ArgosyViewModel", "Discovered $discovered local files")
+        }
+
         val invalidated = gameRepository.validateLocalFiles()
         if (invalidated > 0) {
             android.util.Log.d("ArgosyViewModel", "Validation: $invalidated games had missing files, attempting recovery")
