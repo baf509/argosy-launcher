@@ -74,6 +74,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
 import com.nendo.argosy.data.emulator.InstalledEmulator
 import com.nendo.argosy.ui.input.LocalInputDispatcher
+import com.nendo.argosy.ui.navigation.Screen
 import com.nendo.argosy.ui.components.FooterBar
 import com.nendo.argosy.ui.components.InputButton
 import com.nendo.argosy.ui.theme.Motion
@@ -129,11 +130,11 @@ fun GameDetailScreen(
     DisposableEffect(lifecycleOwner, inputHandler) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
-                inputDispatcher.subscribeView(inputHandler)
+                inputDispatcher.subscribeView(inputHandler, forRoute = Screen.ROUTE_GAME_DETAIL)
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
-        inputDispatcher.subscribeView(inputHandler)
+        inputDispatcher.subscribeView(inputHandler, forRoute = Screen.ROUTE_GAME_DETAIL)
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
         }

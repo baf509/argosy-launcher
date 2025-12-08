@@ -75,6 +75,7 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import coil.size.Size
 import com.nendo.argosy.ui.input.LocalInputDispatcher
+import com.nendo.argosy.ui.navigation.Screen
 import com.nendo.argosy.ui.components.FooterHint
 import com.nendo.argosy.ui.components.GameCard
 import com.nendo.argosy.ui.components.InputButton
@@ -142,11 +143,11 @@ fun HomeScreen(
     DisposableEffect(lifecycleOwner, inputHandler) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
-                inputDispatcher.subscribeView(inputHandler)
+                inputDispatcher.subscribeView(inputHandler, forRoute = Screen.ROUTE_HOME)
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
-        inputDispatcher.subscribeView(inputHandler)
+        inputDispatcher.subscribeView(inputHandler, forRoute = Screen.ROUTE_HOME)
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
         }

@@ -93,6 +93,7 @@ import com.nendo.argosy.ui.components.InfoPreference
 import com.nendo.argosy.ui.components.NavigationPreference
 import com.nendo.argosy.ui.components.PlatformPreference
 import com.nendo.argosy.ui.input.LocalInputDispatcher
+import com.nendo.argosy.ui.navigation.Screen
 import com.nendo.argosy.ui.components.SliderPreference
 import com.nendo.argosy.ui.components.SwitchPreference
 import com.nendo.argosy.ui.input.SoundPreset
@@ -135,11 +136,11 @@ fun SettingsScreen(
     DisposableEffect(lifecycleOwner, inputHandler) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
-                inputDispatcher.subscribeView(inputHandler)
+                inputDispatcher.subscribeView(inputHandler, forRoute = Screen.ROUTE_SETTINGS)
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
-        inputDispatcher.subscribeView(inputHandler)
+        inputDispatcher.subscribeView(inputHandler, forRoute = Screen.ROUTE_SETTINGS)
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
         }

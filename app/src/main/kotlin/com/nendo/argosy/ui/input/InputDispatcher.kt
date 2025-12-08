@@ -13,6 +13,11 @@ class InputDispatcher(
     private var viewHandler: InputHandler? = null
     private var pendingEvent: GamepadEvent? = null
     private var inputBlockedUntil: Long = 0L
+    private var currentRoute: String? = null
+
+    fun setCurrentRoute(route: String?) {
+        currentRoute = route
+    }
 
     fun pushModal(handler: InputHandler) {
         modalStack.add(handler)
@@ -41,6 +46,22 @@ class InputDispatcher(
         clearModals()
         viewHandler = handler
         processPendingEvent()
+    }
+
+    fun subscribeView(handler: InputHandler, forRoute: String): Boolean {
+        if (!isRouteMatch(forRoute, currentRoute)) {
+            return false
+        }
+        clearModals()
+        viewHandler = handler
+        processPendingEvent()
+        return true
+    }
+
+    private fun isRouteMatch(subscriberRoute: String, activeRoute: String?): Boolean {
+        if (activeRoute == null) return false
+        return activeRoute.startsWith(subscriberRoute) ||
+            activeRoute.substringBefore("?").substringBefore("/") == subscriberRoute
     }
 
     private fun processPendingEvent() {

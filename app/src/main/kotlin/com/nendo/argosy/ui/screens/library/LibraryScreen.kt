@@ -60,6 +60,7 @@ import com.nendo.argosy.ui.components.FooterBar
 import com.nendo.argosy.ui.components.InputButton
 import com.nendo.argosy.ui.icons.InputIcons
 import com.nendo.argosy.ui.input.LocalInputDispatcher
+import com.nendo.argosy.ui.navigation.Screen
 import com.nendo.argosy.ui.components.GameCard
 import com.nendo.argosy.ui.components.SourceBadge
 import com.nendo.argosy.ui.screens.home.HomeGameUi
@@ -168,11 +169,11 @@ fun LibraryScreen(
     DisposableEffect(lifecycleOwner, inputHandler) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
-                inputDispatcher.subscribeView(inputHandler)
+                inputDispatcher.subscribeView(inputHandler, forRoute = Screen.ROUTE_LIBRARY)
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
-        inputDispatcher.subscribeView(inputHandler)
+        inputDispatcher.subscribeView(inputHandler, forRoute = Screen.ROUTE_LIBRARY)
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
         }

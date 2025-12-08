@@ -109,11 +109,12 @@ fun ArgosyApp(
         }
     }
 
-    // Block input during route transitions
+    // Block input during route transitions and sync route to dispatcher
     LaunchedEffect(currentRoute) {
         if (currentRoute != null) {
             inputDispatcher.blockInputFor(Motion.transitionDebounceMs)
         }
+        inputDispatcher.setCurrentRoute(currentRoute)
     }
 
     // Sync ViewModel drawer state -> Compose drawer animation

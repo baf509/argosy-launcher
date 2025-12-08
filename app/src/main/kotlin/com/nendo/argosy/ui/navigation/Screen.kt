@@ -14,4 +14,14 @@ sealed class Screen(val route: String) {
         fun createRoute(gameId: Long) = "game/$gameId"
     }
     data object Search : Screen("search")
+
+    companion object {
+        const val ROUTE_HOME = "home"
+        const val ROUTE_LIBRARY = "library"
+        const val ROUTE_GAME_DETAIL = "game"
+        const val ROUTE_SETTINGS = "settings"
+        const val ROUTE_DOWNLOADS = "downloads"
+        const val ROUTE_APPS = "apps"
+        const val ROUTE_SEARCH = "search"
+    }
 }

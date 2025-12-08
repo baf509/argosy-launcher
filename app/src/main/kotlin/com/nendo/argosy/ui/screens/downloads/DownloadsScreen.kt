@@ -53,6 +53,7 @@ import coil.compose.AsyncImage
 import com.nendo.argosy.data.download.DownloadProgress
 import com.nendo.argosy.data.download.DownloadState
 import com.nendo.argosy.ui.input.LocalInputDispatcher
+import com.nendo.argosy.ui.navigation.Screen
 import com.nendo.argosy.ui.components.FooterBar
 import com.nendo.argosy.ui.components.InputButton
 
@@ -71,11 +72,11 @@ fun DownloadsScreen(
     DisposableEffect(lifecycleOwner, inputHandler) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
-                inputDispatcher.subscribeView(inputHandler)
+                inputDispatcher.subscribeView(inputHandler, forRoute = Screen.ROUTE_DOWNLOADS)
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
-        inputDispatcher.subscribeView(inputHandler)
+        inputDispatcher.subscribeView(inputHandler, forRoute = Screen.ROUTE_DOWNLOADS)
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
         }
