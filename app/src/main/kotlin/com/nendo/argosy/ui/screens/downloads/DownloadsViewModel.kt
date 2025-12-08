@@ -8,6 +8,7 @@ import com.nendo.argosy.data.download.DownloadQueueState
 import com.nendo.argosy.data.download.DownloadState
 import com.nendo.argosy.data.preferences.UserPreferencesRepository
 import com.nendo.argosy.ui.input.InputHandler
+import com.nendo.argosy.ui.input.InputResult
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -150,28 +151,28 @@ class DownloadsViewModel @Inject constructor(
     }
 
     fun createInputHandler(onBack: () -> Unit): InputHandler = object : InputHandler {
-        override fun onUp(): Boolean = moveFocus(-1)
-        override fun onDown(): Boolean = moveFocus(1)
-        override fun onLeft(): Boolean = false
-        override fun onRight(): Boolean = false
-        override fun onConfirm(): Boolean {
+        override fun onUp(): InputResult = if (moveFocus(-1)) InputResult.HANDLED else InputResult.UNHANDLED
+        override fun onDown(): InputResult = if (moveFocus(1)) InputResult.HANDLED else InputResult.UNHANDLED
+        override fun onLeft(): InputResult = InputResult.UNHANDLED
+        override fun onRight(): InputResult = InputResult.UNHANDLED
+        override fun onConfirm(): InputResult {
             if (_uiState.value.canToggle) {
                 toggleFocusedItem()
-                return true
+                return InputResult.HANDLED
             }
-            return false
+            return InputResult.UNHANDLED
         }
-        override fun onBack(): Boolean {
+        override fun onBack(): InputResult {
             onBack()
-            return true
+            return InputResult.HANDLED
         }
-        override fun onMenu(): Boolean = false
-        override fun onSecondaryAction(): Boolean {
+        override fun onMenu(): InputResult = InputResult.UNHANDLED
+        override fun onSecondaryAction(): InputResult {
             if (_uiState.value.canCancel) {
                 cancelFocusedItem()
-                return true
+                return InputResult.HANDLED
             }
-            return false
+            return InputResult.UNHANDLED
         }
     }
 }

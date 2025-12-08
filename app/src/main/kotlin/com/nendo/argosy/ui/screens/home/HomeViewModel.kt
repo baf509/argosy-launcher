@@ -18,6 +18,9 @@ import com.nendo.argosy.domain.usecase.game.LaunchGameUseCase
 import com.nendo.argosy.domain.usecase.sync.SyncLibraryResult
 import com.nendo.argosy.domain.usecase.sync.SyncLibraryUseCase
 import com.nendo.argosy.ui.input.InputHandler
+import com.nendo.argosy.ui.input.InputResult
+import com.nendo.argosy.ui.input.SoundFeedbackManager
+import com.nendo.argosy.ui.input.SoundType
 import com.nendo.argosy.ui.navigation.GameNavigationContext
 import com.nendo.argosy.ui.notification.NotificationManager
 import com.nendo.argosy.ui.notification.showError
@@ -158,7 +161,8 @@ class HomeViewModel @Inject constructor(
     private val downloadGameUseCase: DownloadGameUseCase,
     private val launchGameUseCase: LaunchGameUseCase,
     private val deleteGameUseCase: DeleteGameUseCase,
-    private val downloadManager: DownloadManager
+    private val downloadManager: DownloadManager,
+    private val soundManager: SoundFeedbackManager
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(HomeUiState())
@@ -320,9 +324,17 @@ class HomeViewModel @Inject constructor(
                             isLoading = if (shouldClearLoading) false else state.isLoading
                         )
                     } else {
+                        val focusedGameId = state.focusedGame?.id
+                        val newIndex = if (focusedGameId != null) {
+                            items.indexOfFirst { (it as? HomeRowItem.Game)?.game?.id == focusedGameId }
+                                .takeIf { it >= 0 } ?: state.focusedGameIndex
+                        } else {
+                            state.focusedGameIndex
+                        }
                         isFirstEmission = false
                         state.copy(
                             platformItems = items,
+                            focusedGameIndex = newIndex.coerceIn(0, (items.size - 1).coerceAtLeast(0)),
                             isLoading = if (shouldClearLoading) false else state.isLoading
                         )
                     }
@@ -375,25 +387,42 @@ class HomeViewModel @Inject constructor(
         }
     }
 
-    fun nextGame() {
-        _uiState.update { state ->
-            if (state.currentItems.isEmpty()) return@update state
-            val nextIndex = (state.focusedGameIndex + 1).coerceAtMost(state.currentItems.size - 1)
-            state.copy(focusedGameIndex = nextIndex)
-        }
+    fun nextGame(): Boolean {
+        val state = _uiState.value
+        if (state.currentItems.isEmpty()) return false
+        if (state.focusedGameIndex >= state.currentItems.size - 1) return false
+        _uiState.update { it.copy(focusedGameIndex = state.focusedGameIndex + 1) }
+        return true
     }
 
-    fun previousGame() {
-        _uiState.update { state ->
-            if (state.currentItems.isEmpty()) return@update state
-            val prevIndex = (state.focusedGameIndex - 1).coerceAtLeast(0)
-            state.copy(focusedGameIndex = prevIndex)
+    fun previousGame(): Boolean {
+        val state = _uiState.value
+        if (state.currentItems.isEmpty()) return false
+        if (state.focusedGameIndex <= 0) return false
+        _uiState.update { it.copy(focusedGameIndex = state.focusedGameIndex - 1) }
+        return true
+    }
+
+    private fun scrollToFirstItem(): Boolean {
+        val state = _uiState.value
+
+        if (state.focusedGameIndex == 0) {
+            return false
         }
+
+        _uiState.update { it.copy(focusedGameIndex = 0) }
+        return true
     }
 
     fun toggleGameMenu() {
+        val wasShowing = _uiState.value.showGameMenu
         _uiState.update {
             it.copy(showGameMenu = !it.showGameMenu, gameMenuFocusIndex = 0)
+        }
+        if (!wasShowing) {
+            soundManager.play(SoundType.OPEN_MODAL)
+        } else {
+            soundManager.play(SoundType.CLOSE_MODAL)
         }
     }
 
@@ -444,7 +473,9 @@ class HomeViewModel @Inject constructor(
     private fun toggleFavorite(gameId: Long) {
         viewModelScope.launch {
             val game = gameDao.getById(gameId) ?: return@launch
-            gameDao.updateFavorite(gameId, !game.isFavorite)
+            val newFavoriteState = !game.isFavorite
+            gameDao.updateFavorite(gameId, newFavoriteState)
+            soundManager.play(if (newFavoriteState) SoundType.FAVORITE else SoundType.UNFAVORITE)
         }
     }
 
@@ -485,6 +516,7 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch {
             when (val result = launchGameUseCase(gameId)) {
                 is LaunchResult.Success -> {
+                    soundManager.play(SoundType.LAUNCH_GAME)
                     _events.emit(HomeEvent.LaunchGame(result.intent))
                 }
                 is LaunchResult.NoEmulator -> {
@@ -548,37 +580,37 @@ class HomeViewModel @Inject constructor(
         onGameSelect: (Long) -> Unit,
         onDrawerToggle: () -> Unit
     ): InputHandler = object : InputHandler {
-        override fun onUp(): Boolean {
-            if (_uiState.value.showGameMenu) {
+        override fun onUp(): InputResult {
+            return if (_uiState.value.showGameMenu) {
                 moveGameMenuFocus(-1)
+                InputResult.HANDLED
             } else {
                 previousRow()
+                InputResult.handled(SoundType.SECTION_CHANGE)
             }
-            return true
         }
 
-        override fun onDown(): Boolean {
-            if (_uiState.value.showGameMenu) {
+        override fun onDown(): InputResult {
+            return if (_uiState.value.showGameMenu) {
                 moveGameMenuFocus(1)
+                InputResult.HANDLED
             } else {
                 nextRow()
+                InputResult.handled(SoundType.SECTION_CHANGE)
             }
-            return true
         }
 
-        override fun onLeft(): Boolean {
-            if (_uiState.value.showGameMenu) return true
-            previousGame()
-            return true
+        override fun onLeft(): InputResult {
+            if (_uiState.value.showGameMenu) return InputResult.HANDLED
+            return if (previousGame()) InputResult.HANDLED else InputResult.UNHANDLED
         }
 
-        override fun onRight(): Boolean {
-            if (_uiState.value.showGameMenu) return true
-            nextGame()
-            return true
+        override fun onRight(): InputResult {
+            if (_uiState.value.showGameMenu) return InputResult.HANDLED
+            return if (nextGame()) InputResult.HANDLED else InputResult.UNHANDLED
         }
 
-        override fun onConfirm(): Boolean {
+        override fun onConfirm(): InputResult {
             if (_uiState.value.showGameMenu) {
                 confirmGameMenuSelection(onGameSelect)
             } else {
@@ -598,43 +630,43 @@ class HomeViewModel @Inject constructor(
                     null -> { }
                 }
             }
-            return true
+            return InputResult.HANDLED
         }
 
-        override fun onBack(): Boolean {
+        override fun onBack(): InputResult {
             if (_uiState.value.showGameMenu) {
                 toggleGameMenu()
-                return true
+                return InputResult.HANDLED
             }
-            return false
+            return if (scrollToFirstItem()) InputResult.HANDLED else InputResult.UNHANDLED
         }
 
-        override fun onMenu(): Boolean {
+        override fun onMenu(): InputResult {
             if (_uiState.value.showGameMenu) {
                 toggleGameMenu()
-                return false
+                return InputResult.UNHANDLED
             }
             onDrawerToggle()
-            return true
+            return InputResult.HANDLED
         }
 
-        override fun onSelect(): Boolean {
+        override fun onSelect(): InputResult {
             if (_uiState.value.focusedGame != null) {
                 toggleGameMenu()
             }
-            return true
+            return InputResult.HANDLED
         }
 
-        override fun onSecondaryAction(): Boolean {
-            val game = _uiState.value.focusedGame ?: return false
+        override fun onSecondaryAction(): InputResult {
+            val game = _uiState.value.focusedGame ?: return InputResult.UNHANDLED
             toggleFavorite(game.id)
-            return true
+            return InputResult.HANDLED
         }
 
-        override fun onContextMenu(): Boolean {
-            val game = _uiState.value.focusedGame ?: return false
+        override fun onContextMenu(): InputResult {
+            val game = _uiState.value.focusedGame ?: return InputResult.UNHANDLED
             onGameSelect(game.id)
-            return true
+            return InputResult.HANDLED
         }
     }
 }

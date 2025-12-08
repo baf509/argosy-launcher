@@ -5,16 +5,20 @@ import android.os.Build
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
+import android.util.Log
 import androidx.core.content.getSystemService
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
+private const val TAG = "HapticFeedback"
+
 enum class HapticPattern {
     FOCUS_CHANGE,
     SELECTION,
     BOUNDARY_HIT,
-    ERROR
+    ERROR,
+    INTENSITY_PREVIEW
 }
 
 @Singleton
@@ -29,41 +33,86 @@ class HapticFeedbackManager @Inject constructor(
     }
 
     private var enabled = true
+    private var intensity = Intensity.MEDIUM
+    private val hasAmplitudeControl = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        vibrator?.hasAmplitudeControl() == true
+    } else false
+
+    enum class Intensity { LOW, MEDIUM, HIGH }
+
+    init {
+        Log.d(TAG, "Vibrator: $vibrator, hasVibrator: ${vibrator?.hasVibrator()}, hasAmplitudeControl: $hasAmplitudeControl")
+    }
 
     fun setEnabled(enabled: Boolean) {
         this.enabled = enabled
     }
 
+    fun setIntensity(amplitude: Int) {
+        intensity = when {
+            amplitude <= 80 -> Intensity.LOW
+            amplitude <= 180 -> Intensity.MEDIUM
+            else -> Intensity.HIGH
+        }
+        Log.d(TAG, "setIntensity amplitude=$amplitude -> $intensity")
+    }
+
     fun vibrate(pattern: HapticPattern) {
+        Log.d(TAG, "vibrate($pattern) enabled=$enabled intensity=$intensity hasAmplitudeControl=$hasAmplitudeControl")
         if (!enabled || vibrator == null || !vibrator.hasVibrator()) return
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val effect = when (pattern) {
-                HapticPattern.FOCUS_CHANGE -> VibrationEffect.createOneShot(
-                    10L,
-                    VibrationEffect.DEFAULT_AMPLITUDE
-                )
-                HapticPattern.SELECTION -> VibrationEffect.createOneShot(
-                    20L,
-                    VibrationEffect.DEFAULT_AMPLITUDE
-                )
-                HapticPattern.BOUNDARY_HIT -> VibrationEffect.createWaveform(
-                    longArrayOf(0, 10, 50, 10),
-                    -1
-                )
-                HapticPattern.ERROR -> VibrationEffect.createOneShot(
-                    100L,
-                    VibrationEffect.DEFAULT_AMPLITUDE
-                )
+            val amplitude = when (intensity) {
+                Intensity.LOW -> 140
+                Intensity.MEDIUM -> 220
+                Intensity.HIGH -> 255
+            }
+
+            val effect = if (hasAmplitudeControl) {
+                // Device supports amplitude - use it for real intensity control
+                when (pattern) {
+                    HapticPattern.FOCUS_CHANGE -> VibrationEffect.createOneShot(100L, amplitude)
+                    HapticPattern.SELECTION -> VibrationEffect.createOneShot(150L, amplitude)
+                    HapticPattern.BOUNDARY_HIT -> VibrationEffect.createOneShot(150L, 255)
+                    HapticPattern.ERROR -> VibrationEffect.createOneShot(240L, 255)
+                    HapticPattern.INTENSITY_PREVIEW -> VibrationEffect.createWaveform(
+                        longArrayOf(0, 500, 100, 500, 100, 500),
+                        intArrayOf(0, amplitude, 0, amplitude, 0, amplitude),
+                        -1
+                    )
+                }
+            } else {
+                // No amplitude control - vary duration instead
+                val duration = when (intensity) {
+                    Intensity.LOW -> 45L
+                    Intensity.MEDIUM -> 90L
+                    Intensity.HIGH -> 150L
+                }
+                when (pattern) {
+                    HapticPattern.FOCUS_CHANGE -> VibrationEffect.createOneShot(duration, VibrationEffect.DEFAULT_AMPLITUDE)
+                    HapticPattern.SELECTION -> VibrationEffect.createOneShot(duration + 45, VibrationEffect.DEFAULT_AMPLITUDE)
+                    HapticPattern.BOUNDARY_HIT -> VibrationEffect.createOneShot(180L, VibrationEffect.DEFAULT_AMPLITUDE)
+                    HapticPattern.ERROR -> VibrationEffect.createOneShot(300L, VibrationEffect.DEFAULT_AMPLITUDE)
+                    HapticPattern.INTENSITY_PREVIEW -> VibrationEffect.createWaveform(
+                        longArrayOf(0, 500, 100, 500, 100, 500),
+                        -1
+                    )
+                }
             }
             vibrator.vibrate(effect)
         } else {
             @Suppress("DEPRECATION")
+            val duration = when (intensity) {
+                Intensity.LOW -> 45L
+                Intensity.MEDIUM -> 90L
+                Intensity.HIGH -> 150L
+            }
             when (pattern) {
-                HapticPattern.FOCUS_CHANGE -> vibrator.vibrate(10L)
-                HapticPattern.SELECTION -> vibrator.vibrate(20L)
-                HapticPattern.BOUNDARY_HIT -> vibrator.vibrate(longArrayOf(0, 10, 50, 10), -1)
-                HapticPattern.ERROR -> vibrator.vibrate(100L)
+                HapticPattern.FOCUS_CHANGE -> vibrator.vibrate(duration)
+                HapticPattern.SELECTION -> vibrator.vibrate(duration + 45)
+                HapticPattern.BOUNDARY_HIT -> vibrator.vibrate(180L)
+                HapticPattern.ERROR -> vibrator.vibrate(300L)
+                HapticPattern.INTENSITY_PREVIEW -> vibrator.vibrate(longArrayOf(0, 500, 100, 500, 100, 500), -1)
             }
         }
     }

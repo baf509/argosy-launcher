@@ -7,6 +7,8 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import com.nendo.argosy.ui.input.SoundConfig
+import com.nendo.argosy.ui.input.SoundType
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import java.time.Instant
@@ -32,6 +34,9 @@ class UserPreferencesRepository @Inject constructor(
         val TERTIARY_COLOR = intPreferencesKey("tertiary_color")
 
         val HAPTIC_ENABLED = booleanPreferencesKey("haptic_enabled")
+        val HAPTIC_INTENSITY = stringPreferencesKey("haptic_intensity")
+        val SOUND_ENABLED = booleanPreferencesKey("sound_enabled")
+        val SOUND_VOLUME = intPreferencesKey("sound_volume")
         val NINTENDO_BUTTON_LAYOUT = booleanPreferencesKey("nintendo_button_layout")
         val SWAP_START_SELECT = booleanPreferencesKey("swap_start_select")
         val ANIMATION_SPEED = stringPreferencesKey("animation_speed")
@@ -50,6 +55,7 @@ class UserPreferencesRepository @Inject constructor(
         val APP_ORDER = stringPreferencesKey("app_order")
         val MAX_CONCURRENT_DOWNLOADS = intPreferencesKey("max_concurrent_downloads")
         val UI_DENSITY = stringPreferencesKey("ui_density")
+        val SOUND_CONFIGS = stringPreferencesKey("sound_configs")
     }
 
     val userPreferences: Flow<UserPreferences> = dataStore.data.map { prefs ->
@@ -68,6 +74,9 @@ class UserPreferencesRepository @Inject constructor(
             secondaryColor = prefs[Keys.SECONDARY_COLOR],
             tertiaryColor = prefs[Keys.TERTIARY_COLOR],
             hapticEnabled = prefs[Keys.HAPTIC_ENABLED] ?: true,
+            hapticIntensity = HapticIntensity.fromString(prefs[Keys.HAPTIC_INTENSITY]),
+            soundEnabled = prefs[Keys.SOUND_ENABLED] ?: false,
+            soundVolume = prefs[Keys.SOUND_VOLUME] ?: 40,
             nintendoButtonLayout = prefs[Keys.NINTENDO_BUTTON_LAYOUT] ?: false,
             swapStartSelect = prefs[Keys.SWAP_START_SELECT] ?: false,
             animationSpeed = AnimationSpeed.fromString(prefs[Keys.ANIMATION_SPEED]),
@@ -102,8 +111,37 @@ class UserPreferencesRepository @Inject constructor(
                 ?.filter { it.isNotBlank() }
                 ?: emptyList(),
             maxConcurrentDownloads = prefs[Keys.MAX_CONCURRENT_DOWNLOADS] ?: 1,
-            uiDensity = UiDensity.fromString(prefs[Keys.UI_DENSITY])
+            uiDensity = UiDensity.fromString(prefs[Keys.UI_DENSITY]),
+            soundConfigs = parseSoundConfigs(prefs[Keys.SOUND_CONFIGS])
         )
+    }
+
+    private fun parseSoundConfigs(raw: String?): Map<SoundType, SoundConfig> {
+        if (raw.isNullOrBlank()) return emptyMap()
+        return raw.split(";")
+            .mapNotNull { entry ->
+                val parts = entry.split("=", limit = 2)
+                if (parts.size != 2) return@mapNotNull null
+                val soundType = try { SoundType.valueOf(parts[0]) } catch (e: Exception) { return@mapNotNull null }
+                val value = parts[1]
+                val config = when {
+                    value.startsWith("custom:") -> SoundConfig(customFilePath = value.removePrefix("custom:"))
+                    else -> SoundConfig(presetName = value)
+                }
+                soundType to config
+            }
+            .toMap()
+    }
+
+    private fun serializeSoundConfigs(configs: Map<SoundType, SoundConfig>): String {
+        return configs.entries.joinToString(";") { (type, config) ->
+            val value = when {
+                config.customFilePath != null -> "custom:${config.customFilePath}"
+                config.presetName != null -> config.presetName
+                else -> return@joinToString ""
+            }
+            "${type.name}=$value"
+        }
     }
 
     val preferences: Flow<UserPreferences> = userPreferences
@@ -164,6 +202,24 @@ class UserPreferencesRepository @Inject constructor(
     suspend fun setHapticEnabled(enabled: Boolean) {
         dataStore.edit { prefs ->
             prefs[Keys.HAPTIC_ENABLED] = enabled
+        }
+    }
+
+    suspend fun setHapticIntensity(intensity: HapticIntensity) {
+        dataStore.edit { prefs ->
+            prefs[Keys.HAPTIC_INTENSITY] = intensity.name
+        }
+    }
+
+    suspend fun setSoundEnabled(enabled: Boolean) {
+        dataStore.edit { prefs ->
+            prefs[Keys.SOUND_ENABLED] = enabled
+        }
+    }
+
+    suspend fun setSoundVolume(volume: Int) {
+        dataStore.edit { prefs ->
+            prefs[Keys.SOUND_VOLUME] = volume.coerceIn(0, 100)
         }
     }
 
@@ -274,6 +330,32 @@ class UserPreferencesRepository @Inject constructor(
             prefs[Keys.UI_DENSITY] = density.name
         }
     }
+
+    suspend fun setSoundConfigs(configs: Map<SoundType, SoundConfig>) {
+        dataStore.edit { prefs ->
+            if (configs.isEmpty()) {
+                prefs.remove(Keys.SOUND_CONFIGS)
+            } else {
+                prefs[Keys.SOUND_CONFIGS] = serializeSoundConfigs(configs)
+            }
+        }
+    }
+
+    suspend fun setSoundConfig(type: SoundType, config: SoundConfig?) {
+        dataStore.edit { prefs ->
+            val current = parseSoundConfigs(prefs[Keys.SOUND_CONFIGS])
+            val updated = if (config != null) {
+                current + (type to config)
+            } else {
+                current - type
+            }
+            if (updated.isEmpty()) {
+                prefs.remove(Keys.SOUND_CONFIGS)
+            } else {
+                prefs[Keys.SOUND_CONFIGS] = serializeSoundConfigs(updated)
+            }
+        }
+    }
 }
 
 data class UserPreferences(
@@ -287,6 +369,9 @@ data class UserPreferences(
     val secondaryColor: Int? = null,
     val tertiaryColor: Int? = null,
     val hapticEnabled: Boolean = true,
+    val hapticIntensity: HapticIntensity = HapticIntensity.MEDIUM,
+    val soundEnabled: Boolean = false,
+    val soundVolume: Int = 40,
     val nintendoButtonLayout: Boolean = false,
     val swapStartSelect: Boolean = false,
     val animationSpeed: AnimationSpeed = AnimationSpeed.NORMAL,
@@ -297,7 +382,8 @@ data class UserPreferences(
     val visibleSystemApps: Set<String> = emptySet(),
     val appOrder: List<String> = emptyList(),
     val maxConcurrentDownloads: Int = 1,
-    val uiDensity: UiDensity = UiDensity.NORMAL
+    val uiDensity: UiDensity = UiDensity.NORMAL,
+    val soundConfigs: Map<SoundType, SoundConfig> = emptyMap()
 )
 
 enum class ThemeMode {
@@ -324,5 +410,16 @@ enum class UiDensity {
     companion object {
         fun fromString(value: String?): UiDensity =
             entries.find { it.name == value } ?: NORMAL
+    }
+}
+
+enum class HapticIntensity(val amplitude: Int) {
+    LOW(50),
+    MEDIUM(128),
+    HIGH(255);
+
+    companion object {
+        fun fromString(value: String?): HapticIntensity =
+            entries.find { it.name == value } ?: MEDIUM
     }
 }

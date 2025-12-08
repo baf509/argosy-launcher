@@ -10,11 +10,18 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.dp
+import kotlin.math.abs
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
@@ -24,9 +31,11 @@ import com.nendo.argosy.ui.input.InputDispatcher
 import com.nendo.argosy.ui.input.LocalInputDispatcher
 import com.nendo.argosy.ui.input.LocalNintendoLayout
 import com.nendo.argosy.ui.input.LocalSwapStartSelect
+import com.nendo.argosy.ui.input.SoundType
 import com.nendo.argosy.ui.navigation.NavGraph
 import com.nendo.argosy.ui.navigation.Screen
 import com.nendo.argosy.ui.notification.NotificationHost
+import com.nendo.argosy.ui.theme.Motion
 import kotlinx.coroutines.launch
 
 @Composable
@@ -44,7 +53,10 @@ fun ArgosyApp(
     val scope = rememberCoroutineScope()
 
     val inputDispatcher = remember {
-        InputDispatcher(hapticManager = viewModel.hapticManager)
+        InputDispatcher(
+            hapticManager = viewModel.hapticManager,
+            soundManager = viewModel.soundManager
+        )
     }
 
     val startDestination = if (uiState.isFirstRun) {
@@ -53,13 +65,25 @@ fun ArgosyApp(
         Screen.Home.route
     }
 
-    LaunchedEffect(drawerState.isOpen, currentRoute) {
+    LaunchedEffect(currentRoute) {
+        if (currentRoute != null) {
+            inputDispatcher.blockInputFor(Motion.transitionDebounceMs)
+        }
+    }
+
+    var isFirstDrawerEffect by remember { mutableStateOf(true) }
+    LaunchedEffect(drawerState.isOpen) {
+        inputDispatcher.blockInputFor(Motion.transitionDebounceMs)
         inputDispatcher.setDrawerOpen(drawerState.isOpen)
         if (drawerState.isOpen) {
             val parentRoute = navController.previousBackStackEntry?.destination?.route
             viewModel.initDrawerFocus(currentRoute, parentRoute)
             viewModel.onDrawerOpened()
+            viewModel.soundManager.play(SoundType.OPEN_MODAL)
+        } else if (!isFirstDrawerEffect) {
+            viewModel.soundManager.play(SoundType.CLOSE_MODAL)
         }
+        isFirstDrawerEffect = false
     }
 
     val drawerInputHandler = remember(currentRoute) {
@@ -120,10 +144,21 @@ fun ArgosyApp(
                     )
                 }
             ) {
+                val density = LocalDensity.current
+                val drawerWidthPx = remember { with(density) { 360.dp.toPx() } }
+                val drawerBlurProgress by remember(drawerState) {
+                    derivedStateOf {
+                        val offset = drawerState.currentOffset
+                        if (offset.isNaN()) 0f else (1f + offset / drawerWidthPx).coerceIn(0f, 1f)
+                    }
+                }
+                val contentBlur = (drawerBlurProgress * Motion.blurRadiusDrawer.value).dp
+
                 NavGraph(
                     navController = navController,
                     startDestination = startDestination,
-                    onDrawerToggle = { scope.launch { if (drawerState.isOpen) drawerState.close() else drawerState.open() } }
+                    onDrawerToggle = { scope.launch { if (drawerState.isOpen) drawerState.close() else drawerState.open() } },
+                    modifier = Modifier.blur(contentBlur)
                 )
             }
 

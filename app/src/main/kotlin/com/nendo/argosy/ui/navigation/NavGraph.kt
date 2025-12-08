@@ -4,6 +4,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -22,9 +23,11 @@ import com.nendo.argosy.ui.screens.settings.SettingsScreen
 fun NavGraph(
     navController: NavHostController,
     startDestination: String,
-    onDrawerToggle: () -> Unit
+    onDrawerToggle: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     NavHost(
+        modifier = modifier,
         navController = navController,
         startDestination = startDestination,
         enterTransition = { fadeIn(animationSpec = tween(150)) },

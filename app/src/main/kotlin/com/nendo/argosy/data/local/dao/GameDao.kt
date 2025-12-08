@@ -186,4 +186,13 @@ interface GameDao {
 
     @Query("UPDATE games SET userDifficulty = :difficulty WHERE id = :gameId")
     suspend fun updateUserDifficulty(gameId: Long, difficulty: Int)
+
+    @Query("UPDATE games SET completion = :completion WHERE id = :gameId")
+    suspend fun updateCompletion(gameId: Long, completion: Int)
+
+    @Query("UPDATE games SET backlogged = :backlogged WHERE id = :gameId")
+    suspend fun updateBacklogged(gameId: Long, backlogged: Boolean)
+
+    @Query("UPDATE games SET nowPlaying = :nowPlaying WHERE id = :gameId")
+    suspend fun updateNowPlaying(gameId: Long, nowPlaying: Boolean)
 }

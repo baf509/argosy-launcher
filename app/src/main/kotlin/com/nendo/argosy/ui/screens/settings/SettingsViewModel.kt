@@ -13,6 +13,7 @@ import com.nendo.argosy.data.local.dao.EmulatorConfigDao
 import com.nendo.argosy.data.local.dao.PlatformDao
 import com.nendo.argosy.data.local.entity.PlatformEntity
 import com.nendo.argosy.data.preferences.AnimationSpeed
+import com.nendo.argosy.data.preferences.HapticIntensity
 import com.nendo.argosy.data.preferences.RegionFilterMode
 import com.nendo.argosy.data.preferences.SyncFilterPreferences
 import com.nendo.argosy.data.preferences.ThemeMode
@@ -34,7 +35,14 @@ import com.nendo.argosy.domain.usecase.game.ConfigureEmulatorUseCase
 import com.nendo.argosy.domain.usecase.sync.SyncLibraryResult
 import com.nendo.argosy.domain.usecase.sync.SyncLibraryUseCase
 import com.nendo.argosy.data.repository.GameRepository
+import com.nendo.argosy.ui.input.HapticFeedbackManager
+import com.nendo.argosy.ui.input.HapticPattern
 import com.nendo.argosy.ui.input.InputHandler
+import com.nendo.argosy.ui.input.InputResult
+import com.nendo.argosy.ui.input.SoundConfig
+import com.nendo.argosy.ui.input.SoundFeedbackManager
+import com.nendo.argosy.ui.input.SoundPreset
+import com.nendo.argosy.ui.input.SoundType
 import com.nendo.argosy.ui.notification.NotificationManager
 import com.nendo.argosy.ui.notification.showError
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -58,6 +66,7 @@ enum class SettingsSection {
     STORAGE,
     DISPLAY,
     CONTROLS,
+    SOUNDS,
     EMULATORS,
     ABOUT
 }
@@ -96,9 +105,32 @@ data class DisplayState(
 
 data class ControlsState(
     val hapticEnabled: Boolean = true,
+    val hapticIntensity: HapticIntensity = HapticIntensity.MEDIUM,
     val nintendoButtonLayout: Boolean = false,
     val swapStartSelect: Boolean = false
 )
+
+data class SoundState(
+    val enabled: Boolean = false,
+    val volume: Int = 40,
+    val soundConfigs: Map<SoundType, SoundConfig> = emptyMap(),
+    val showSoundPicker: Boolean = false,
+    val soundPickerType: SoundType? = null,
+    val soundPickerFocusIndex: Int = 0
+) {
+    val presets: List<SoundPreset> get() = SoundPreset.entries.toList()
+
+    fun getCurrentPresetForType(type: SoundType): SoundPreset? {
+        val config = soundConfigs[type] ?: return null
+        return SoundPreset.entries.find { it.name == config.presetName }
+    }
+
+    fun getDisplayNameForType(type: SoundType): String {
+        val config = soundConfigs[type] ?: return "Default"
+        if (config.customFilePath != null) return "Custom"
+        return SoundPreset.entries.find { it.name == config.presetName }?.displayName ?: "Default"
+    }
+}
 
 data class EmulatorState(
     val platforms: List<PlatformEmulatorConfig> = emptyList(),
@@ -158,6 +190,7 @@ data class SettingsUiState(
     val colorFocusIndex: Int = 0,
     val display: DisplayState = DisplayState(),
     val controls: ControlsState = ControlsState(),
+    val sounds: SoundState = SoundState(),
     val emulators: EmulatorState = EmulatorState(),
     val server: ServerState = ServerState(),
     val storage: StorageState = StorageState(),
@@ -184,7 +217,9 @@ class SettingsViewModel @Inject constructor(
     private val configureEmulatorUseCase: ConfigureEmulatorUseCase,
     private val migrateStorageUseCase: MigrateStorageUseCase,
     private val updateRepository: UpdateRepository,
-    private val appInstaller: AppInstaller
+    private val appInstaller: AppInstaller,
+    private val hapticManager: HapticFeedbackManager,
+    private val soundManager: SoundFeedbackManager
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SettingsUiState())
@@ -252,8 +287,14 @@ class SettingsViewModel @Inject constructor(
                     ),
                     controls = state.controls.copy(
                         hapticEnabled = prefs.hapticEnabled,
+                        hapticIntensity = prefs.hapticIntensity,
                         nintendoButtonLayout = prefs.nintendoButtonLayout,
                         swapStartSelect = prefs.swapStartSelect
+                    ),
+                    sounds = state.sounds.copy(
+                        enabled = prefs.soundEnabled,
+                        volume = prefs.soundVolume,
+                        soundConfigs = prefs.soundConfigs
                     ),
                     emulators = state.emulators.copy(
                         platforms = platformConfigs,
@@ -281,6 +322,8 @@ class SettingsViewModel @Inject constructor(
                     )
                 )
             }
+
+            soundManager.setVolume(prefs.soundVolume)
         }
     }
 
@@ -337,6 +380,7 @@ class SettingsViewModel @Inject constructor(
                 )
             )
         }
+        soundManager.play(SoundType.OPEN_MODAL)
     }
 
     fun dismissEmulatorPicker() {
@@ -349,6 +393,7 @@ class SettingsViewModel @Inject constructor(
                 )
             )
         }
+        soundManager.play(SoundType.CLOSE_MODAL)
     }
 
     fun moveEmulatorPickerFocus(delta: Int) {
@@ -437,6 +482,10 @@ class SettingsViewModel @Inject constructor(
     fun navigateBack(): Boolean {
         val state = _uiState.value
         return when {
+            state.sounds.showSoundPicker -> {
+                dismissSoundPicker()
+                true
+            }
             state.syncSettings.showRegionPicker -> {
                 dismissRegionPicker()
                 true
@@ -464,6 +513,10 @@ class SettingsViewModel @Inject constructor(
     private val colorCount = 7
 
     fun moveFocus(delta: Int) {
+        if (_uiState.value.sounds.showSoundPicker) {
+            moveSoundPickerFocus(delta)
+            return
+        }
         if (_uiState.value.syncSettings.showRegionPicker) {
             moveRegionPickerFocus(delta)
             return
@@ -474,7 +527,7 @@ class SettingsViewModel @Inject constructor(
         }
         _uiState.update { state ->
             val maxIndex = when (state.currentSection) {
-                SettingsSection.MAIN -> 5
+                SettingsSection.MAIN -> 6
                 SettingsSection.SERVER -> when {
                     state.server.rommConfiguring -> 4
                     state.server.connectionStatus == ConnectionStatus.ONLINE ||
@@ -484,7 +537,8 @@ class SettingsViewModel @Inject constructor(
                 SettingsSection.SYNC_SETTINGS -> 7
                 SettingsSection.STORAGE -> 2
                 SettingsSection.DISPLAY -> 3
-                SettingsSection.CONTROLS -> 2
+                SettingsSection.CONTROLS -> if (state.controls.hapticEnabled) 3 else 2
+                SettingsSection.SOUNDS -> if (state.sounds.enabled) 1 + SoundType.entries.size else 0
                 SettingsSection.EMULATORS -> {
                     val platformCount = state.emulators.platforms.size
                     val autoAssignOffset = if (state.emulators.canAutoAssign) 1 else 0
@@ -551,6 +605,151 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    fun setHapticIntensity(intensity: HapticIntensity) {
+        viewModelScope.launch {
+            preferencesRepository.setHapticIntensity(intensity)
+            _uiState.update { it.copy(controls = it.controls.copy(hapticIntensity = intensity)) }
+        }
+    }
+
+    fun cycleHapticIntensity() {
+        adjustHapticIntensity(1)
+    }
+
+    fun adjustHapticIntensity(delta: Int) {
+        val current = _uiState.value.controls.hapticIntensity
+        val currentIndex = current.ordinal
+        val newIndex = (currentIndex + delta).coerceIn(0, HapticIntensity.entries.lastIndex)
+        if (newIndex != currentIndex) {
+            val newIntensity = HapticIntensity.entries[newIndex]
+            hapticManager.setIntensity(newIntensity.amplitude)
+            setHapticIntensity(newIntensity)
+            // Delay preview so it fires AFTER InputDispatcher's FOCUS_CHANGE haptic
+            viewModelScope.launch {
+                kotlinx.coroutines.delay(100)
+                hapticManager.vibrate(HapticPattern.INTENSITY_PREVIEW)
+            }
+        }
+    }
+
+    fun setSoundEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            preferencesRepository.setSoundEnabled(enabled)
+            soundManager.setEnabled(enabled)
+            _uiState.update { it.copy(sounds = it.sounds.copy(enabled = enabled)) }
+        }
+    }
+
+    fun setSoundVolume(volume: Int) {
+        viewModelScope.launch {
+            preferencesRepository.setSoundVolume(volume)
+            soundManager.setVolume(volume)
+            _uiState.update { it.copy(sounds = it.sounds.copy(volume = volume)) }
+            soundManager.play(SoundType.VOLUME_PREVIEW)
+        }
+    }
+
+    fun adjustSoundVolume(delta: Int) {
+        val volumeLevels = listOf(10, 25, 40, 60, 80)
+        val current = _uiState.value.sounds.volume
+        val currentIndex = volumeLevels.indexOfFirst { it >= current }.takeIf { it >= 0 } ?: 0
+        val newIndex = (currentIndex + delta).coerceIn(0, volumeLevels.lastIndex)
+        val newVolume = volumeLevels[newIndex]
+        if (newVolume != current) {
+            setSoundVolume(newVolume)
+        }
+    }
+
+    fun showSoundPicker(type: SoundType) {
+        val currentConfig = _uiState.value.sounds.soundConfigs[type]
+        val initialIndex = if (currentConfig?.presetName != null) {
+            SoundPreset.entries.indexOfFirst { it.name == currentConfig.presetName }.takeIf { it >= 0 } ?: 0
+        } else {
+            0
+        }
+        _uiState.update {
+            it.copy(sounds = it.sounds.copy(
+                showSoundPicker = true,
+                soundPickerType = type,
+                soundPickerFocusIndex = initialIndex
+            ))
+        }
+        soundManager.play(SoundType.OPEN_MODAL)
+    }
+
+    fun dismissSoundPicker() {
+        _uiState.update {
+            it.copy(sounds = it.sounds.copy(
+                showSoundPicker = false,
+                soundPickerType = null,
+                soundPickerFocusIndex = 0
+            ))
+        }
+        soundManager.play(SoundType.CLOSE_MODAL)
+    }
+
+    fun moveSoundPickerFocus(delta: Int) {
+        _uiState.update { state ->
+            val maxIndex = SoundPreset.entries.size - 1
+            val newIndex = (state.sounds.soundPickerFocusIndex + delta).coerceIn(0, maxIndex)
+            state.copy(sounds = state.sounds.copy(soundPickerFocusIndex = newIndex))
+        }
+    }
+
+    fun previewSoundPickerSelection() {
+        val focusIndex = _uiState.value.sounds.soundPickerFocusIndex
+        val preset = SoundPreset.entries.getOrNull(focusIndex) ?: return
+        if (preset != SoundPreset.SILENT && preset != SoundPreset.CUSTOM) {
+            soundManager.playPreset(preset)
+        }
+    }
+
+    fun confirmSoundPickerSelection() {
+        val state = _uiState.value.sounds
+        val type = state.soundPickerType ?: return
+        val focusIndex = state.soundPickerFocusIndex
+        val preset = SoundPreset.entries.getOrNull(focusIndex) ?: return
+
+        if (preset == SoundPreset.CUSTOM) {
+            viewModelScope.launch {
+                _openCustomSoundPickerEvent.emit(type)
+            }
+            dismissSoundPicker()
+            return
+        }
+
+        val config = if (preset == SoundPreset.SILENT) {
+            SoundConfig(presetName = SoundPreset.SILENT.name)
+        } else {
+            SoundConfig(presetName = preset.name)
+        }
+
+        viewModelScope.launch {
+            preferencesRepository.setSoundConfig(type, config)
+            val updatedConfigs = _uiState.value.sounds.soundConfigs + (type to config)
+            _uiState.update {
+                it.copy(sounds = it.sounds.copy(soundConfigs = updatedConfigs))
+            }
+            soundManager.setSoundConfig(type, config)
+        }
+        dismissSoundPicker()
+    }
+
+    fun setCustomSoundFile(type: SoundType, filePath: String) {
+        val config = SoundConfig(customFilePath = filePath)
+        viewModelScope.launch {
+            preferencesRepository.setSoundConfig(type, config)
+            val updatedConfigs = _uiState.value.sounds.soundConfigs + (type to config)
+            _uiState.update {
+                it.copy(sounds = it.sounds.copy(soundConfigs = updatedConfigs))
+            }
+            soundManager.setSoundConfig(type, config)
+        }
+    }
+
+    private val _openCustomSoundPickerEvent = MutableSharedFlow<SoundType>()
+    val openCustomSoundPickerEvent: SharedFlow<SoundType> = _openCustomSoundPickerEvent.asSharedFlow()
+
     fun setNintendoButtonLayout(enabled: Boolean) {
         viewModelScope.launch {
             preferencesRepository.setNintendoButtonLayout(enabled)
@@ -567,10 +766,12 @@ class SettingsViewModel @Inject constructor(
 
     fun showRegionPicker() {
         _uiState.update { it.copy(syncSettings = it.syncSettings.copy(showRegionPicker = true, regionPickerFocusIndex = 0)) }
+        soundManager.play(SoundType.OPEN_MODAL)
     }
 
     fun dismissRegionPicker() {
         _uiState.update { it.copy(syncSettings = it.syncSettings.copy(showRegionPicker = false, regionPickerFocusIndex = 0)) }
+        soundManager.play(SoundType.CLOSE_MODAL)
     }
 
     fun moveRegionPickerFocus(delta: Int) {
@@ -981,20 +1182,22 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    fun handleConfirm() {
+    fun handleConfirm(): InputResult {
         val state = _uiState.value
-        when (state.currentSection) {
+        return when (state.currentSection) {
             SettingsSection.MAIN -> {
                 val section = when (state.focusedIndex) {
                     0 -> SettingsSection.SERVER
                     1 -> SettingsSection.STORAGE
                     2 -> SettingsSection.DISPLAY
                     3 -> SettingsSection.CONTROLS
-                    4 -> SettingsSection.EMULATORS
-                    5 -> SettingsSection.ABOUT
+                    4 -> SettingsSection.SOUNDS
+                    5 -> SettingsSection.EMULATORS
+                    6 -> SettingsSection.ABOUT
                     else -> null
                 }
                 section?.let { navigateToSection(it) }
+                InputResult.HANDLED
             }
             SettingsSection.SERVER -> {
                 when {
@@ -1009,25 +1212,25 @@ class SettingsViewModel @Inject constructor(
                         2 -> if (state.server.connectionStatus == ConnectionStatus.ONLINE) syncRomm()
                     }
                 }
+                InputResult.HANDLED
             }
             SettingsSection.SYNC_SETTINGS -> {
                 when (state.focusedIndex) {
-                    0 -> {} // Sync Images - info only
-                    1 -> toggleSyncScreenshots()
+                    1 -> { toggleSyncScreenshots(); return InputResult.handled(SoundType.TOGGLE) }
                     2 -> showRegionPicker()
                     3 -> toggleRegionMode()
-                    4 -> setExcludeBeta(!state.syncSettings.syncFilters.excludeBeta)
-                    5 -> setExcludePrototype(!state.syncSettings.syncFilters.excludePrototype)
-                    6 -> setExcludeDemo(!state.syncSettings.syncFilters.excludeDemo)
-                    7 -> setDeleteOrphans(!state.syncSettings.syncFilters.deleteOrphans)
+                    4 -> { setExcludeBeta(!state.syncSettings.syncFilters.excludeBeta); return InputResult.handled(SoundType.TOGGLE) }
+                    5 -> { setExcludePrototype(!state.syncSettings.syncFilters.excludePrototype); return InputResult.handled(SoundType.TOGGLE) }
+                    6 -> { setExcludeDemo(!state.syncSettings.syncFilters.excludeDemo); return InputResult.handled(SoundType.TOGGLE) }
+                    7 -> { setDeleteOrphans(!state.syncSettings.syncFilters.deleteOrphans); return InputResult.handled(SoundType.TOGGLE) }
                 }
+                InputResult.HANDLED
             }
             SettingsSection.STORAGE -> {
                 when (state.focusedIndex) {
                     0 -> openFolderPicker()
-                    1 -> {} // Max Active Downloads - handled by left/right
-                    2 -> {} // Downloaded info - display only
                 }
+                InputResult.HANDLED
             }
             SettingsSection.DISPLAY -> {
                 when (state.focusedIndex) {
@@ -1057,13 +1260,40 @@ class SettingsViewModel @Inject constructor(
                         setUiDensity(next)
                     }
                 }
+                InputResult.HANDLED
             }
             SettingsSection.CONTROLS -> {
-                when (state.focusedIndex) {
-                    0 -> setHapticEnabled(!state.controls.hapticEnabled)
-                    1 -> setNintendoButtonLayout(!state.controls.nintendoButtonLayout)
-                    2 -> setSwapStartSelect(!state.controls.swapStartSelect)
+                val isToggle = if (state.controls.hapticEnabled) {
+                    when (state.focusedIndex) {
+                        0 -> { setHapticEnabled(!state.controls.hapticEnabled); true }
+                        1 -> { cycleHapticIntensity(); false }
+                        2 -> { setNintendoButtonLayout(!state.controls.nintendoButtonLayout); true }
+                        3 -> { setSwapStartSelect(!state.controls.swapStartSelect); true }
+                        else -> false
+                    }
+                } else {
+                    when (state.focusedIndex) {
+                        0 -> { setHapticEnabled(!state.controls.hapticEnabled); true }
+                        1 -> { setNintendoButtonLayout(!state.controls.nintendoButtonLayout); true }
+                        2 -> { setSwapStartSelect(!state.controls.swapStartSelect); true }
+                        else -> false
+                    }
                 }
+                if (isToggle) InputResult.handled(SoundType.TOGGLE) else InputResult.HANDLED
+            }
+            SettingsSection.SOUNDS -> {
+                when {
+                    state.focusedIndex == 0 -> {
+                        setSoundEnabled(!state.sounds.enabled)
+                        return InputResult.handled(SoundType.TOGGLE)
+                    }
+                    state.focusedIndex >= 2 && state.sounds.enabled -> {
+                        val soundIndex = state.focusedIndex - 2
+                        val soundType = SoundType.entries.getOrNull(soundIndex)
+                        soundType?.let { showSoundPicker(it) }
+                    }
+                }
+                InputResult.HANDLED
             }
             SettingsSection.EMULATORS -> {
                 val focusOffset = if (state.emulators.canAutoAssign) 1 else 0
@@ -1076,6 +1306,7 @@ class SettingsViewModel @Inject constructor(
                         showEmulatorPicker(config)
                     }
                 }
+                InputResult.HANDLED
             }
             SettingsSection.ABOUT -> {
                 when (state.focusedIndex) {
@@ -1087,74 +1318,103 @@ class SettingsViewModel @Inject constructor(
                         }
                     }
                 }
+                InputResult.HANDLED
             }
         }
     }
 
     fun createInputHandler(onBack: () -> Unit): InputHandler = object : InputHandler {
-        override fun onUp(): Boolean {
+        override fun onUp(): InputResult {
             moveFocus(-1)
-            return true
+            return InputResult.HANDLED
         }
 
-        override fun onDown(): Boolean {
+        override fun onDown(): InputResult {
             moveFocus(1)
-            return true
+            return InputResult.HANDLED
         }
 
-        override fun onLeft(): Boolean {
+        override fun onLeft(): InputResult {
             val state = _uiState.value
             if (state.currentSection == SettingsSection.DISPLAY && state.focusedIndex == 1) {
                 moveColorFocus(-1)
-                return true
+                return InputResult.HANDLED
             }
             if (state.currentSection == SettingsSection.STORAGE && state.focusedIndex == 1) {
                 adjustMaxConcurrentDownloads(-1)
-                return true
+                return InputResult.HANDLED
             }
-            return false
+            if (state.currentSection == SettingsSection.CONTROLS && state.controls.hapticEnabled && state.focusedIndex == 1) {
+                adjustHapticIntensity(-1)
+                return InputResult.HANDLED
+            }
+            if (state.currentSection == SettingsSection.SOUNDS && state.sounds.enabled && state.focusedIndex == 1) {
+                adjustSoundVolume(-1)
+                return InputResult.HANDLED
+            }
+            return InputResult.UNHANDLED
         }
 
-        override fun onRight(): Boolean {
+        override fun onRight(): InputResult {
             val state = _uiState.value
             if (state.currentSection == SettingsSection.DISPLAY && state.focusedIndex == 1) {
                 moveColorFocus(1)
-                return true
+                return InputResult.HANDLED
             }
             if (state.currentSection == SettingsSection.STORAGE && state.focusedIndex == 1) {
                 adjustMaxConcurrentDownloads(1)
-                return true
+                return InputResult.HANDLED
             }
-            return false
+            if (state.currentSection == SettingsSection.CONTROLS && state.controls.hapticEnabled && state.focusedIndex == 1) {
+                adjustHapticIntensity(1)
+                return InputResult.HANDLED
+            }
+            if (state.currentSection == SettingsSection.SOUNDS && state.sounds.enabled && state.focusedIndex == 1) {
+                adjustSoundVolume(1)
+                return InputResult.HANDLED
+            }
+            return InputResult.UNHANDLED
         }
 
-        override fun onConfirm(): Boolean {
+        override fun onConfirm(): InputResult {
             val state = _uiState.value
+            if (state.sounds.showSoundPicker) {
+                confirmSoundPickerSelection()
+                return InputResult.HANDLED
+            }
             if (state.syncSettings.showRegionPicker) {
                 confirmRegionPickerSelection()
-                return true
+                return InputResult.handled(SoundType.TOGGLE)
             }
             if (state.emulators.showEmulatorPicker) {
                 confirmEmulatorPickerSelection()
-                return true
+                return InputResult.HANDLED
             }
             if (state.currentSection == SettingsSection.DISPLAY && state.focusedIndex == 1) {
                 selectFocusedColor()
-                return true
+                return InputResult.HANDLED
             }
-            handleConfirm()
-            return true
+            return handleConfirm()
         }
 
-        override fun onBack(): Boolean {
+        override fun onBack(): InputResult {
             return if (!navigateBack()) {
                 onBack()
-                true
+                InputResult.HANDLED
             } else {
-                true
+                InputResult.HANDLED
             }
         }
 
-        override fun onMenu(): Boolean = false
+        override fun onContextMenu(): InputResult {
+            val state = _uiState.value
+            if (state.sounds.showSoundPicker) {
+                previewSoundPickerSelection()
+                return InputResult.HANDLED
+            }
+            return InputResult.UNHANDLED
+        }
+
+        override fun onMenu(): InputResult = InputResult.UNHANDLED
     }
 }

@@ -1,6 +1,8 @@
 package com.nendo.argosy.ui.screens.library
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
@@ -41,13 +43,15 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.nendo.argosy.ui.theme.Dimens
+import com.nendo.argosy.ui.theme.Motion
 import com.nendo.argosy.data.model.GameSource
 import com.nendo.argosy.ui.components.FooterBar
 import com.nendo.argosy.ui.components.InputButton
@@ -56,7 +60,6 @@ import com.nendo.argosy.ui.components.GameCard
 import com.nendo.argosy.ui.components.SourceBadge
 import com.nendo.argosy.ui.input.LocalInputDispatcher
 import com.nendo.argosy.ui.screens.home.HomeGameUi
-import kotlinx.coroutines.launch
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -76,7 +79,6 @@ fun LibraryScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val gridState = rememberLazyGridState(initialFirstVisibleItemIndex = uiState.focusedIndex)
-    val scope = rememberCoroutineScope()
 
     LaunchedEffect(initialPlatformId) {
         if (initialPlatformId != null) {
@@ -95,40 +97,55 @@ fun LibraryScreen(
     }
 
     LaunchedEffect(uiState.focusedIndex) {
-        if (uiState.games.isNotEmpty()) {
-            val layoutInfo = gridState.layoutInfo
-            val visibleItems = layoutInfo.visibleItemsInfo
-            if (visibleItems.isEmpty()) return@LaunchedEffect
+        if (uiState.games.isEmpty()) return@LaunchedEffect
 
-            val firstItem = visibleItems.first()
-            val rowHeight = firstItem.size.height
-            val spacing = visibleItems.find { it.offset.y != firstItem.offset.y }
-                ?.let { it.offset.y - firstItem.offset.y - rowHeight } ?: 0
-            val rowStep = rowHeight + spacing
+        val layoutInfo = gridState.layoutInfo
+        val visibleItems = layoutInfo.visibleItemsInfo
+        if (visibleItems.isEmpty()) return@LaunchedEffect
 
-            val focusedItem = visibleItems.find { it.index == uiState.focusedIndex }
-            if (focusedItem != null) {
-                val itemTop = focusedItem.offset.y
-                val itemBottom = itemTop + rowHeight
-                val viewportHeight = layoutInfo.viewportSize.height
+        val firstItem = visibleItems.first()
+        val rowHeight = firstItem.size.height
+        val spacing = visibleItems.find { it.offset.y != firstItem.offset.y }
+            ?.let { it.offset.y - firstItem.offset.y - rowHeight } ?: 0
+        val rowStep = rowHeight + spacing
+        val scrollAnim = tween<Float>(durationMillis = 175)
 
-                when {
-                    itemBottom > viewportHeight -> {
-                        scope.launch { gridState.animateScrollBy(rowStep.toFloat()) }
-                    }
-                    itemTop < 0 -> {
-                        scope.launch { gridState.animateScrollBy(-rowStep.toFloat()) }
-                    }
+        val focusedItem = visibleItems.find { it.index == uiState.focusedIndex }
+        if (focusedItem != null) {
+            val itemTop = focusedItem.offset.y
+            val itemBottom = itemTop + rowHeight
+            val viewportHeight = layoutInfo.viewportSize.height
+            val paddingBuffer = (rowHeight * Motion.scrollPaddingPercent).toInt()
+
+            when {
+                itemBottom + paddingBuffer > viewportHeight -> {
+                    gridState.animateScrollBy(rowStep.toFloat(), scrollAnim)
                 }
+                itemTop - paddingBuffer < 0 -> {
+                    gridState.animateScrollBy(-rowStep.toFloat(), scrollAnim)
+                }
+            }
+        } else {
+            val cols = uiState.columnsCount
+            val focusedRow = uiState.focusedIndex / cols
+            val firstVisibleRow = firstItem.index / cols
+            if (focusedRow > firstVisibleRow) {
+                gridState.animateScrollBy(rowStep.toFloat(), scrollAnim)
             } else {
-                val cols = uiState.columnsCount
-                val focusedRow = uiState.focusedIndex / cols
-                val firstVisibleRow = firstItem.index / cols
-                scope.launch {
-                    if (focusedRow > firstVisibleRow) {
-                        gridState.animateScrollBy(rowStep.toFloat())
-                    } else {
-                        gridState.animateScrollBy(-rowStep.toFloat())
+                gridState.animateScrollBy(-rowStep.toFloat(), scrollAnim)
+            }
+        }
+    }
+
+    val context = LocalContext.current
+    LaunchedEffect(Unit) {
+        viewModel.events.collect { event ->
+            when (event) {
+                is LibraryEvent.LaunchGame -> {
+                    try {
+                        context.startActivity(event.intent)
+                    } catch (e: Exception) {
+                        android.util.Log.e("LibraryScreen", "Failed to start activity", e)
                     }
                 }
             }
@@ -151,8 +168,15 @@ fun LibraryScreen(
         }
     }
 
+    val showAnyOverlay = uiState.showFilterMenu || uiState.showQuickMenu
+    val modalBlur by animateDpAsState(
+        targetValue = if (showAnyOverlay) Motion.blurRadiusModal else 0.dp,
+        animationSpec = Motion.focusSpringDp,
+        label = "modalBlur"
+    )
+
     Box(modifier = Modifier.fillMaxSize()) {
-        Column(modifier = Modifier.fillMaxSize()) {
+        Column(modifier = Modifier.fillMaxSize().blur(modalBlur)) {
             LibraryHeader(
                 platformName = uiState.currentPlatform?.shortName ?: "All Platforms",
                 gameCount = uiState.games.size
@@ -200,7 +224,7 @@ fun LibraryScreen(
                 }
             }
 
-            LibraryFooter()
+            LibraryFooter(focusedGame = uiState.focusedGame)
         }
 
         AnimatedVisibility(
@@ -319,11 +343,12 @@ private fun LibraryGameCard(
 }
 
 @Composable
-private fun LibraryFooter() {
+private fun LibraryFooter(focusedGame: LibraryGameUi?) {
     FooterBar(
         hints = listOf(
             InputButton.DPAD to "Navigate",
             InputButton.A to "Details",
+            InputButton.Y to if (focusedGame?.isFavorite == true) "Unfavorite" else "Favorite",
             InputButton.X to "Filter",
             InputButton.SELECT to "Quick Menu"
         )
@@ -371,9 +396,10 @@ private fun FilterMenuOverlay(
 
             if (itemHeight > 0 && viewportHeight > 0) {
                 val centerOffset = (viewportHeight - itemHeight) / 2
+                val paddingBuffer = (itemHeight * Motion.scrollPaddingPercent).toInt()
                 listState.animateScrollToItem(
                     index = uiState.filterOptionIndex,
-                    scrollOffset = -centerOffset
+                    scrollOffset = -centerOffset + paddingBuffer
                 )
             } else {
                 listState.animateScrollToItem(uiState.filterOptionIndex)
@@ -475,7 +501,7 @@ private fun FilterMenuOverlay(
             FooterBar(
                 hints = listOf(
                     InputButton.DPAD to "Navigate",
-                    InputButton.Y to "Reset",
+                    InputButton.X to "Reset",
                     InputButton.A to if (isMultiSelect) "Toggle" else "Select",
                     InputButton.B to "Close"
                 )

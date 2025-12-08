@@ -396,6 +396,9 @@ class RomMRepository @Inject constructor(
             franchises = rom.metadatum?.franchises?.joinToString(","),
             userRating = rom.romUser?.rating ?: existing?.userRating ?: 0,
             userDifficulty = rom.romUser?.difficulty ?: existing?.userDifficulty ?: 0,
+            completion = rom.romUser?.completion ?: existing?.completion ?: 0,
+            backlogged = rom.romUser?.backlogged ?: existing?.backlogged ?: false,
+            nowPlaying = rom.romUser?.nowPlaying ?: existing?.nowPlaying ?: false,
             isFavorite = existing?.isFavorite ?: false,
             isHidden = existing?.isHidden ?: false,
             playCount = existing?.playCount ?: 0,
@@ -525,8 +528,16 @@ class RomMRepository @Inject constructor(
                     RomMResult.Error("Empty response body")
                 }
             } else {
-                Log.e(TAG, "downloadRom: failed with code=${response.code()}")
-                RomMResult.Error("Download failed", response.code())
+                val code = response.code()
+                Log.e(TAG, "downloadRom: failed with code=$code")
+                val message = when (code) {
+                    400 -> "Bad request - try resyncing (HTTP 400)"
+                    401, 403 -> "Authentication failed (HTTP $code)"
+                    404 -> "ROM not found on server - try resyncing"
+                    500, 502, 503 -> "Server error (HTTP $code)"
+                    else -> "Download failed (HTTP $code)"
+                }
+                RomMResult.Error(message, code)
             }
         } catch (e: Exception) {
             Log.e(TAG, "downloadRom: exception", e)

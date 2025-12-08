@@ -6,14 +6,19 @@ import android.net.Uri
 import android.os.Environment
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -40,6 +45,7 @@ import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.TouchApp
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material3.AlertDialog
@@ -73,6 +79,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.nendo.argosy.data.cache.ImageCacheProgress
 import com.nendo.argosy.data.preferences.AnimationSpeed
+import com.nendo.argosy.data.preferences.HapticIntensity
 import com.nendo.argosy.data.preferences.RegionFilterMode
 import com.nendo.argosy.data.preferences.SyncFilterPreferences
 import com.nendo.argosy.data.preferences.ThemeMode
@@ -88,7 +95,12 @@ import com.nendo.argosy.ui.components.PlatformPreference
 import com.nendo.argosy.ui.components.SliderPreference
 import com.nendo.argosy.ui.components.SwitchPreference
 import com.nendo.argosy.ui.input.LocalInputDispatcher
+import com.nendo.argosy.ui.input.SoundPreset
+import com.nendo.argosy.ui.input.SoundType
 import com.nendo.argosy.ui.theme.Dimens
+import com.nendo.argosy.ui.theme.Motion
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.ui.draw.blur
 
 @Composable
 fun SettingsScreen(
@@ -159,38 +171,66 @@ fun SettingsScreen(
         }
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-    ) {
-        SettingsHeader(
-            title = when (uiState.currentSection) {
-                SettingsSection.MAIN -> "SETTINGS"
-                SettingsSection.SERVER -> "SERVER"
-                SettingsSection.SYNC_SETTINGS -> "SYNC SETTINGS"
-                SettingsSection.STORAGE -> "STORAGE"
-                SettingsSection.DISPLAY -> "DISPLAY"
-                SettingsSection.CONTROLS -> "CONTROLS"
-                SettingsSection.EMULATORS -> "EMULATORS"
-                SettingsSection.ABOUT -> "ABOUT"
-            }
-        )
+    val soundPickerBlur by animateDpAsState(
+        targetValue = if (uiState.sounds.showSoundPicker) Motion.blurRadiusModal else 0.dp,
+        animationSpec = Motion.focusSpringDp,
+        label = "soundPickerBlur"
+    )
 
-        when (uiState.currentSection) {
-            SettingsSection.MAIN -> MainSettingsSection(uiState, viewModel)
-            SettingsSection.SERVER -> ServerSection(uiState, viewModel, imageCacheProgress)
-            SettingsSection.SYNC_SETTINGS -> SyncSettingsSection(uiState, viewModel)
-            SettingsSection.STORAGE -> StorageSection(uiState, viewModel)
-            SettingsSection.DISPLAY -> DisplaySection(uiState, viewModel)
-            SettingsSection.CONTROLS -> ControlsSection(uiState, viewModel)
-            SettingsSection.EMULATORS -> EmulatorsSection(uiState, viewModel)
-            SettingsSection.ABOUT -> AboutSection(uiState, viewModel)
+    Box(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .blur(soundPickerBlur)
+                .background(MaterialTheme.colorScheme.background)
+        ) {
+            SettingsHeader(
+                title = when (uiState.currentSection) {
+                    SettingsSection.MAIN -> "SETTINGS"
+                    SettingsSection.SERVER -> "SERVER"
+                    SettingsSection.SYNC_SETTINGS -> "SYNC SETTINGS"
+                    SettingsSection.STORAGE -> "STORAGE"
+                    SettingsSection.DISPLAY -> "DISPLAY"
+                    SettingsSection.CONTROLS -> "CONTROLS"
+                    SettingsSection.SOUNDS -> "SOUNDS"
+                    SettingsSection.EMULATORS -> "EMULATORS"
+                    SettingsSection.ABOUT -> "ABOUT"
+                }
+            )
+
+            when (uiState.currentSection) {
+                SettingsSection.MAIN -> MainSettingsSection(uiState, viewModel)
+                SettingsSection.SERVER -> ServerSection(uiState, viewModel, imageCacheProgress)
+                SettingsSection.SYNC_SETTINGS -> SyncSettingsSection(uiState, viewModel)
+                SettingsSection.STORAGE -> StorageSection(uiState, viewModel)
+                SettingsSection.DISPLAY -> DisplaySection(uiState, viewModel)
+                SettingsSection.CONTROLS -> ControlsSection(uiState, viewModel)
+                SettingsSection.SOUNDS -> SoundsSection(uiState, viewModel)
+                SettingsSection.EMULATORS -> EmulatorsSection(uiState, viewModel)
+                SettingsSection.ABOUT -> AboutSection(uiState, viewModel)
+            }
+
+            Spacer(modifier = Modifier.weight(1f))
+
+            SettingsFooter()
         }
 
-        Spacer(modifier = Modifier.weight(1f))
-
-        SettingsFooter()
+        AnimatedVisibility(
+            visible = uiState.sounds.showSoundPicker && uiState.sounds.soundPickerType != null,
+            enter = fadeIn(),
+            exit = fadeOut()
+        ) {
+            uiState.sounds.soundPickerType?.let { soundType ->
+                SoundPickerPopup(
+                    soundType = soundType,
+                    presets = uiState.sounds.presets,
+                    focusIndex = uiState.sounds.soundPickerFocusIndex,
+                    currentPreset = uiState.sounds.getCurrentPresetForType(soundType),
+                    onConfirm = { viewModel.confirmSoundPickerSelection() },
+                    onDismiss = { viewModel.dismissSoundPicker() }
+                )
+            }
+        }
     }
 
     if (uiState.showMigrationDialog) {
@@ -242,11 +282,12 @@ private fun MainSettingsSection(uiState: SettingsUiState, viewModel: SettingsVie
     val listState = rememberLazyListState()
 
     LaunchedEffect(uiState.focusedIndex) {
-        if (uiState.focusedIndex in 0..5) {
+        if (uiState.focusedIndex in 0..6) {
             val viewportHeight = listState.layoutInfo.viewportSize.height
             val itemHeight = listState.layoutInfo.visibleItemsInfo.firstOrNull()?.size ?: 0
             val centerOffset = if (itemHeight > 0) (viewportHeight - itemHeight) / 2 else 0
-            listState.animateScrollToItem(uiState.focusedIndex, -centerOffset)
+            val paddingBuffer = (itemHeight * Motion.scrollPaddingPercent).toInt()
+            listState.animateScrollToItem(uiState.focusedIndex, -centerOffset + paddingBuffer)
         }
     }
 
@@ -306,10 +347,19 @@ private fun MainSettingsSection(uiState: SettingsUiState, viewModel: SettingsVie
         }
         item {
             NavigationPreference(
+                icon = Icons.AutoMirrored.Filled.VolumeUp,
+                title = "Sounds",
+                subtitle = if (uiState.sounds.enabled) "Enabled" else "Disabled",
+                isFocused = uiState.focusedIndex == 4,
+                onClick = { viewModel.navigateToSection(SettingsSection.SOUNDS) }
+            )
+        }
+        item {
+            NavigationPreference(
                 icon = Icons.Default.Gamepad,
                 title = "Emulators",
                 subtitle = "${uiState.emulators.installedEmulators.size} installed",
-                isFocused = uiState.focusedIndex == 4,
+                isFocused = uiState.focusedIndex == 5,
                 onClick = { viewModel.navigateToSection(SettingsSection.EMULATORS) }
             )
         }
@@ -318,7 +368,7 @@ private fun MainSettingsSection(uiState: SettingsUiState, viewModel: SettingsVie
                 icon = Icons.Default.Info,
                 title = "About",
                 subtitle = "Version ${uiState.appVersion}",
-                isFocused = uiState.focusedIndex == 5,
+                isFocused = uiState.focusedIndex == 6,
                 onClick = { viewModel.navigateToSection(SettingsSection.ABOUT) }
             )
         }
@@ -343,7 +393,8 @@ private fun DisplaySection(uiState: SettingsUiState, viewModel: SettingsViewMode
             val viewportHeight = listState.layoutInfo.viewportSize.height
             val itemHeight = listState.layoutInfo.visibleItemsInfo.firstOrNull()?.size ?: 0
             val centerOffset = if (itemHeight > 0) (viewportHeight - itemHeight) / 2 else 0
-            listState.animateScrollToItem(uiState.focusedIndex, -centerOffset)
+            val paddingBuffer = (itemHeight * Motion.scrollPaddingPercent).toInt()
+            listState.animateScrollToItem(uiState.focusedIndex, -centerOffset + paddingBuffer)
         }
     }
 
@@ -421,13 +472,15 @@ private fun DisplaySection(uiState: SettingsUiState, viewModel: SettingsViewMode
 @Composable
 private fun ControlsSection(uiState: SettingsUiState, viewModel: SettingsViewModel) {
     val listState = rememberLazyListState()
+    val maxIndex = if (uiState.controls.hapticEnabled) 3 else 2
 
     LaunchedEffect(uiState.focusedIndex) {
-        if (uiState.focusedIndex in 0..2) {
+        if (uiState.focusedIndex in 0..maxIndex) {
             val viewportHeight = listState.layoutInfo.viewportSize.height
             val itemHeight = listState.layoutInfo.visibleItemsInfo.firstOrNull()?.size ?: 0
             val centerOffset = if (itemHeight > 0) (viewportHeight - itemHeight) / 2 else 0
-            listState.animateScrollToItem(uiState.focusedIndex, -centerOffset)
+            val paddingBuffer = (itemHeight * Motion.scrollPaddingPercent).toInt()
+            listState.animateScrollToItem(uiState.focusedIndex, -centerOffset + paddingBuffer)
         }
     }
 
@@ -444,22 +497,267 @@ private fun ControlsSection(uiState: SettingsUiState, viewModel: SettingsViewMod
                 onToggle = { viewModel.setHapticEnabled(it) }
             )
         }
+        if (uiState.controls.hapticEnabled) {
+            item {
+                SliderPreference(
+                    title = "Haptic Intensity",
+                    value = uiState.controls.hapticIntensity.ordinal + 1,
+                    minValue = 1,
+                    maxValue = 3,
+                    isFocused = uiState.focusedIndex == 1
+                )
+            }
+        }
         item {
+            val focusIndex = if (uiState.controls.hapticEnabled) 2 else 1
             SwitchPreference(
                 title = "Nintendo Button Layout",
                 subtitle = "Swap A/B button mappings",
                 isEnabled = uiState.controls.nintendoButtonLayout,
-                isFocused = uiState.focusedIndex == 1,
+                isFocused = uiState.focusedIndex == focusIndex,
                 onToggle = { viewModel.setNintendoButtonLayout(it) }
             )
         }
         item {
+            val focusIndex = if (uiState.controls.hapticEnabled) 3 else 2
             SwitchPreference(
                 title = "Swap Start/Select",
                 subtitle = "Flip the Start and Select button functions",
                 isEnabled = uiState.controls.swapStartSelect,
-                isFocused = uiState.focusedIndex == 2,
+                isFocused = uiState.focusedIndex == focusIndex,
                 onToggle = { viewModel.setSwapStartSelect(it) }
+            )
+        }
+    }
+}
+
+@Composable
+private fun SoundsSection(uiState: SettingsUiState, viewModel: SettingsViewModel) {
+    val listState = rememberLazyListState()
+    val soundTypes = SoundType.entries.toList()
+    val maxIndex = if (uiState.sounds.enabled) 1 + soundTypes.size else 0
+
+    LaunchedEffect(uiState.focusedIndex) {
+        if (uiState.focusedIndex in 0..maxIndex) {
+            val viewportHeight = listState.layoutInfo.viewportSize.height
+            val itemHeight = listState.layoutInfo.visibleItemsInfo.firstOrNull()?.size ?: 0
+            val centerOffset = if (itemHeight > 0) (viewportHeight - itemHeight) / 2 else 0
+            val paddingBuffer = (itemHeight * Motion.scrollPaddingPercent).toInt()
+            listState.animateScrollToItem(uiState.focusedIndex, -centerOffset + paddingBuffer)
+        }
+    }
+
+    LazyColumn(
+        state = listState,
+        modifier = Modifier.padding(Dimens.spacingMd),
+        verticalArrangement = Arrangement.spacedBy(Dimens.spacingSm)
+    ) {
+        item {
+            SwitchPreference(
+                title = "UI Sounds",
+                subtitle = "Play tones on navigation and selection",
+                isEnabled = uiState.sounds.enabled,
+                isFocused = uiState.focusedIndex == 0,
+                onToggle = { viewModel.setSoundEnabled(it) }
+            )
+        }
+        if (uiState.sounds.enabled) {
+            item {
+                val volumeLevels = listOf(10, 25, 40, 60, 80)
+                val sliderValue = (volumeLevels.indexOfFirst { it >= uiState.sounds.volume }.takeIf { it >= 0 } ?: 0) + 1
+                SliderPreference(
+                    title = "Volume",
+                    value = sliderValue,
+                    minValue = 1,
+                    maxValue = 5,
+                    isFocused = uiState.focusedIndex == 1
+                )
+            }
+            item {
+                Spacer(modifier = Modifier.height(Dimens.spacingSm))
+                Text(
+                    text = "CUSTOMIZE SOUNDS",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                    modifier = Modifier.padding(horizontal = Dimens.spacingSm)
+                )
+            }
+            itemsIndexed(soundTypes) { index, soundType ->
+                val focusIndex = 2 + index
+                SoundCustomizationItem(
+                    soundType = soundType,
+                    displayValue = uiState.sounds.getDisplayNameForType(soundType),
+                    isFocused = uiState.focusedIndex == focusIndex,
+                    onClick = { viewModel.showSoundPicker(soundType) }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SoundCustomizationItem(
+    soundType: SoundType,
+    displayValue: String,
+    isFocused: Boolean,
+    onClick: () -> Unit
+) {
+    val displayName = soundType.name
+        .replace("_", " ")
+        .lowercase()
+        .split(" ")
+        .joinToString(" ") { it.replaceFirstChar { c -> c.uppercase() } }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(Dimens.radiusMd))
+            .background(
+                if (isFocused) MaterialTheme.colorScheme.primaryContainer
+                else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+            )
+            .clickable(onClick = onClick)
+            .padding(Dimens.spacingMd),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = displayName,
+            style = MaterialTheme.typography.titleMedium,
+            color = if (isFocused) MaterialTheme.colorScheme.onPrimaryContainer
+                    else MaterialTheme.colorScheme.onSurface
+        )
+        Text(
+            text = displayValue,
+            style = MaterialTheme.typography.bodyMedium,
+            color = if (isFocused) MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                    else MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
+private fun SoundPickerPopup(
+    soundType: SoundType,
+    presets: List<SoundPreset>,
+    focusIndex: Int,
+    currentPreset: SoundPreset?,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val listState = rememberLazyListState()
+    val displayName = soundType.name
+        .replace("_", " ")
+        .lowercase()
+        .split(" ")
+        .joinToString(" ") { it.replaceFirstChar { c -> c.uppercase() } }
+
+    LaunchedEffect(focusIndex) {
+        val safeIndex = focusIndex.coerceAtLeast(0)
+        val layoutInfo = listState.layoutInfo
+        val viewportHeight = layoutInfo.viewportSize.height
+        val itemHeight = layoutInfo.visibleItemsInfo.firstOrNull()?.size ?: 0
+
+        if (itemHeight == 0 || viewportHeight == 0) {
+            listState.animateScrollToItem(safeIndex)
+            return@LaunchedEffect
+        }
+
+        val paddingBuffer = (itemHeight * Motion.scrollPaddingPercent).toInt()
+        val centerOffset = (viewportHeight - itemHeight) / 2
+        listState.animateScrollToItem(safeIndex, -centerOffset + paddingBuffer)
+    }
+
+    BoxWithConstraints(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.7f))
+            .clickable(onClick = onDismiss),
+        contentAlignment = Alignment.Center
+    ) {
+        val maxModalHeight = maxHeight * 0.85f
+
+        Column(
+            modifier = Modifier
+                .width(400.dp)
+                .heightIn(max = maxModalHeight)
+                .clip(RoundedCornerShape(Dimens.radiusLg))
+                .background(MaterialTheme.colorScheme.surface)
+                .clickable(enabled = false, onClick = {})
+                .padding(Dimens.spacingLg),
+            verticalArrangement = Arrangement.spacedBy(Dimens.spacingMd)
+        ) {
+            Text(
+                text = displayName.uppercase(),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary
+            )
+
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.weight(1f),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = Dimens.spacingXs),
+                verticalArrangement = Arrangement.spacedBy(Dimens.spacingSm)
+            ) {
+                itemsIndexed(presets) { index, preset ->
+                    val isFocused = focusIndex == index
+                    val isSelected = preset == currentPreset
+                    SoundPickerItem(
+                        name = preset.displayName,
+                        isFocused = isFocused,
+                        isSelected = isSelected,
+                        onClick = onConfirm
+                    )
+                }
+            }
+
+            FooterBar(
+                hints = listOf(
+                    InputButton.X to "Preview",
+                    InputButton.A to "Select",
+                    InputButton.B to "Close"
+                )
+            )
+        }
+    }
+}
+
+@Composable
+private fun SoundPickerItem(
+    name: String,
+    isFocused: Boolean,
+    isSelected: Boolean,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(Dimens.radiusMd))
+            .background(
+                when {
+                    isFocused -> MaterialTheme.colorScheme.primaryContainer
+                    isSelected -> MaterialTheme.colorScheme.surfaceVariant
+                    else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                }
+            )
+            .clickable(onClick = onClick)
+            .padding(Dimens.spacingMd),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = name,
+            style = MaterialTheme.typography.titleMedium,
+            color = if (isFocused) MaterialTheme.colorScheme.onPrimaryContainer
+                    else MaterialTheme.colorScheme.onSurface
+        )
+        if (isSelected) {
+            Icon(
+                imageVector = Icons.Default.Check,
+                contentDescription = null,
+                tint = if (isFocused) MaterialTheme.colorScheme.onPrimaryContainer
+                       else MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(20.dp)
             )
         }
     }
@@ -498,20 +796,27 @@ private fun EmulatorsSection(uiState: SettingsUiState, viewModel: SettingsViewMo
     val listState = rememberLazyListState()
     val focusOffset = if (uiState.emulators.canAutoAssign) 1 else 0
 
+    val modalBlur by animateDpAsState(
+        targetValue = if (uiState.emulators.showEmulatorPicker) Motion.blurRadiusModal else 0.dp,
+        animationSpec = Motion.focusSpringDp,
+        label = "emulatorPickerBlur"
+    )
+
     LaunchedEffect(uiState.focusedIndex) {
         val totalItems = uiState.emulators.platforms.size + focusOffset
         if (totalItems > 0 && uiState.focusedIndex in 0 until totalItems) {
             val viewportHeight = listState.layoutInfo.viewportSize.height
             val itemHeight = listState.layoutInfo.visibleItemsInfo.firstOrNull()?.size ?: 0
             val centerOffset = if (itemHeight > 0) (viewportHeight - itemHeight) / 2 else 0
-            listState.animateScrollToItem(uiState.focusedIndex, -centerOffset)
+            val paddingBuffer = (itemHeight * Motion.scrollPaddingPercent).toInt()
+            listState.animateScrollToItem(uiState.focusedIndex, -centerOffset + paddingBuffer)
         }
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
         LazyColumn(
             state = listState,
-            modifier = Modifier.padding(Dimens.spacingMd),
+            modifier = Modifier.padding(Dimens.spacingMd).blur(modalBlur),
             verticalArrangement = Arrangement.spacedBy(Dimens.spacingSm)
         ) {
             if (uiState.emulators.canAutoAssign) {
@@ -569,7 +874,8 @@ private fun ServerSection(
                 val viewportHeight = listState.layoutInfo.viewportSize.height
                 val itemHeight = listState.layoutInfo.visibleItemsInfo.firstOrNull()?.size ?: 0
                 val centerOffset = if (itemHeight > 0) (viewportHeight - itemHeight) / 2 else 0
-                listState.animateScrollToItem(uiState.focusedIndex, -centerOffset)
+                val paddingBuffer = (itemHeight * Motion.scrollPaddingPercent).toInt()
+                listState.animateScrollToItem(uiState.focusedIndex, -centerOffset + paddingBuffer)
             }
         }
 
@@ -646,7 +952,8 @@ private fun StorageSection(uiState: SettingsUiState, viewModel: SettingsViewMode
             val viewportHeight = listState.layoutInfo.viewportSize.height
             val itemHeight = listState.layoutInfo.visibleItemsInfo.firstOrNull()?.size ?: 0
             val centerOffset = if (itemHeight > 0) (viewportHeight - itemHeight) / 2 else 0
-            listState.animateScrollToItem(uiState.focusedIndex, -centerOffset)
+            val paddingBuffer = (itemHeight * Motion.scrollPaddingPercent).toInt()
+            listState.animateScrollToItem(uiState.focusedIndex, -centerOffset + paddingBuffer)
         }
     }
 
@@ -737,19 +1044,26 @@ private fun ImageCacheProgressItem(progress: ImageCacheProgress) {
 private fun SyncSettingsSection(uiState: SettingsUiState, viewModel: SettingsViewModel) {
     val listState = rememberLazyListState()
 
+    val modalBlur by animateDpAsState(
+        targetValue = if (uiState.syncSettings.showRegionPicker) Motion.blurRadiusModal else 0.dp,
+        animationSpec = Motion.focusSpringDp,
+        label = "regionPickerBlur"
+    )
+
     LaunchedEffect(uiState.focusedIndex) {
         if (uiState.focusedIndex in 0..7) {
             val viewportHeight = listState.layoutInfo.viewportSize.height
             val itemHeight = listState.layoutInfo.visibleItemsInfo.firstOrNull()?.size ?: 0
             val centerOffset = if (itemHeight > 0) (viewportHeight - itemHeight) / 2 else 0
-            listState.animateScrollToItem(uiState.focusedIndex, -centerOffset)
+            val paddingBuffer = (itemHeight * Motion.scrollPaddingPercent).toInt()
+            listState.animateScrollToItem(uiState.focusedIndex, -centerOffset + paddingBuffer)
         }
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
         LazyColumn(
             state = listState,
-            modifier = Modifier.padding(Dimens.spacingMd),
+            modifier = Modifier.padding(Dimens.spacingMd).blur(modalBlur),
             verticalArrangement = Arrangement.spacedBy(Dimens.spacingSm)
         ) {
             item {
@@ -850,7 +1164,19 @@ private fun RegionPickerPopup(
     val allRegions = SyncFilterPreferences.ALL_KNOWN_REGIONS
 
     LaunchedEffect(focusIndex) {
-        listState.animateScrollToItem(focusIndex.coerceAtLeast(0))
+        val safeIndex = focusIndex.coerceAtLeast(0)
+        val layoutInfo = listState.layoutInfo
+        val viewportHeight = layoutInfo.viewportSize.height
+        val itemHeight = layoutInfo.visibleItemsInfo.firstOrNull()?.size ?: 0
+
+        if (itemHeight == 0 || viewportHeight == 0) {
+            listState.animateScrollToItem(safeIndex)
+            return@LaunchedEffect
+        }
+
+        val paddingBuffer = (itemHeight * Motion.scrollPaddingPercent).toInt()
+        val centerOffset = (viewportHeight - itemHeight) / 2
+        listState.animateScrollToItem(safeIndex, -centerOffset + paddingBuffer)
     }
 
     Box(
@@ -1226,7 +1552,19 @@ private fun EmulatorPickerPopup(
             }
             else -> focusIndex
         }
-        listState.animateScrollToItem(scrollIndex.coerceAtLeast(0))
+        val safeIndex = scrollIndex.coerceAtLeast(0)
+        val layoutInfo = listState.layoutInfo
+        val viewportHeight = layoutInfo.viewportSize.height
+        val itemHeight = layoutInfo.visibleItemsInfo.firstOrNull()?.size ?: 0
+
+        if (itemHeight == 0 || viewportHeight == 0) {
+            listState.animateScrollToItem(safeIndex)
+            return@LaunchedEffect
+        }
+
+        val paddingBuffer = (itemHeight * Motion.scrollPaddingPercent).toInt()
+        val centerOffset = (viewportHeight - itemHeight) / 2
+        listState.animateScrollToItem(safeIndex, -centerOffset + paddingBuffer)
     }
 
     Box(

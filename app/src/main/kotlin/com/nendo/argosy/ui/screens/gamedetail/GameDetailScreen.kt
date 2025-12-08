@@ -1,6 +1,7 @@
 package com.nendo.argosy.ui.screens.gamedetail
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
@@ -72,6 +73,7 @@ import com.nendo.argosy.data.emulator.InstalledEmulator
 import com.nendo.argosy.ui.components.FooterBar
 import com.nendo.argosy.ui.components.InputButton
 import com.nendo.argosy.ui.input.LocalInputDispatcher
+import com.nendo.argosy.ui.theme.Motion
 import kotlinx.coroutines.flow.collectLatest
 
 @Composable
@@ -149,8 +151,16 @@ private fun GameDetailContent(
     viewModel: GameDetailViewModel,
     scrollState: ScrollState
 ) {
+    val showAnyOverlay = uiState.showMoreOptions || uiState.showEmulatorPicker || uiState.showRatingPicker
+    val modalBlur by animateDpAsState(
+        targetValue = if (showAnyOverlay) Motion.blurRadiusModal else 0.dp,
+        animationSpec = Motion.focusSpringDp,
+        label = "modalBlur"
+    )
+
     Box(modifier = Modifier.fillMaxSize()) {
-        if (game.backgroundPath != null) {
+        Box(modifier = Modifier.fillMaxSize().blur(modalBlur)) {
+            if (game.backgroundPath != null) {
             AsyncImage(
                 model = game.backgroundPath,
                 contentDescription = null,
@@ -435,6 +445,7 @@ private fun GameDetailContent(
                 }
             }
         }
+        }
 
         AnimatedVisibility(
             visible = uiState.showMoreOptions,
@@ -490,7 +501,7 @@ private fun GameDetailContent(
                         GameDownloadStatus.PAUSED -> "Paused"
                     },
                     InputButton.B to "Back",
-                    InputButton.Y to "Favorite"
+                    InputButton.Y to if (uiState.game?.isFavorite == true) "Unfavorite" else "Favorite"
                 )
             )
         }

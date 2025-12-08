@@ -8,12 +8,14 @@ private const val TAG = "InputDispatcher"
 
 @Stable
 class InputDispatcher(
-    private val hapticManager: HapticFeedbackManager? = null
+    private val hapticManager: HapticFeedbackManager? = null,
+    private val soundManager: SoundFeedbackManager? = null
 ) {
     private var activeHandler: InputHandler? = null
     private var drawerHandler: InputHandler? = null
     private var isDrawerOpen: Boolean = false
     private var pendingEvent: GamepadEvent? = null
+    private var inputBlockedUntil: Long = 0L
 
     fun setActiveScreen(handler: InputHandler?) {
         Log.d(TAG, "setActiveScreen: ${handler?.javaClass?.simpleName}")
@@ -44,7 +46,17 @@ class InputDispatcher(
         isDrawerOpen = open
     }
 
+    fun blockInputFor(durationMs: Long) {
+        inputBlockedUntil = System.currentTimeMillis() + durationMs
+        Log.d(TAG, "Blocking input for ${durationMs}ms")
+    }
+
     fun dispatch(event: GamepadEvent): Boolean {
+        if (System.currentTimeMillis() < inputBlockedUntil) {
+            Log.d(TAG, "Input blocked, ignoring event: $event")
+            return true
+        }
+
         Log.d(TAG, "dispatch: event=$event, isDrawerOpen=$isDrawerOpen, " +
             "drawerHandler=${drawerHandler?.javaClass?.simpleName}, " +
             "activeHandler=${activeHandler?.javaClass?.simpleName}")
@@ -57,26 +69,47 @@ class InputDispatcher(
         }
 
         pendingEvent = null
-        val handled = dispatchToHandler(event, handler)
+        val result = dispatchToHandler(event, handler)
+        val handled = result.handled
 
-        if (handled) {
-            when (event) {
-                GamepadEvent.Up, GamepadEvent.Down, GamepadEvent.Left, GamepadEvent.Right,
-                GamepadEvent.PrevSection, GamepadEvent.NextSection -> {
+        when (event) {
+            GamepadEvent.Up, GamepadEvent.Down, GamepadEvent.Left, GamepadEvent.Right -> {
+                if (handled) {
                     hapticManager?.vibrate(HapticPattern.FOCUS_CHANGE)
+                    soundManager?.play(result.soundOverride ?: SoundType.NAVIGATE)
+                } else {
+                    hapticManager?.vibrate(HapticPattern.BOUNDARY_HIT)
+                    soundManager?.play(SoundType.BOUNDARY)
                 }
-                GamepadEvent.Confirm -> {
-                    hapticManager?.vibrate(HapticPattern.SELECTION)
-                }
-                else -> {}
             }
+            GamepadEvent.PrevSection, GamepadEvent.NextSection -> {
+                if (handled) {
+                    hapticManager?.vibrate(HapticPattern.FOCUS_CHANGE)
+                    soundManager?.play(result.soundOverride ?: SoundType.SECTION_CHANGE)
+                } else {
+                    hapticManager?.vibrate(HapticPattern.BOUNDARY_HIT)
+                    soundManager?.play(SoundType.BOUNDARY)
+                }
+            }
+            GamepadEvent.Confirm -> {
+                if (handled) {
+                    hapticManager?.vibrate(HapticPattern.SELECTION)
+                    soundManager?.play(result.soundOverride ?: SoundType.SELECT)
+                }
+            }
+            GamepadEvent.Back -> {
+                if (handled) {
+                    soundManager?.play(result.soundOverride ?: SoundType.BACK)
+                }
+            }
+            else -> {}
         }
 
         Log.d(TAG, "dispatch result: handled=$handled")
         return handled
     }
 
-    private fun dispatchToHandler(event: GamepadEvent, handler: InputHandler): Boolean {
+    private fun dispatchToHandler(event: GamepadEvent, handler: InputHandler): InputResult {
         return when (event) {
             GamepadEvent.Up -> handler.onUp()
             GamepadEvent.Down -> handler.onDown()

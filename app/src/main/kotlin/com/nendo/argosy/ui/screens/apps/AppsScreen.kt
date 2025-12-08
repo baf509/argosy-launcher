@@ -58,6 +58,9 @@ import com.nendo.argosy.ui.components.FooterBar
 import com.nendo.argosy.ui.components.InputButton
 import com.nendo.argosy.ui.input.LocalInputDispatcher
 import com.nendo.argosy.ui.theme.Dimens
+import com.nendo.argosy.ui.theme.Motion
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.ui.draw.blur
 import kotlinx.coroutines.launch
 
 @Composable
@@ -121,8 +124,14 @@ fun AppsScreen(
         }
     }
 
+    val modalBlur by animateDpAsState(
+        targetValue = if (uiState.showContextMenu) Motion.blurRadiusModal else 0.dp,
+        animationSpec = Motion.focusSpringDp,
+        label = "contextMenuBlur"
+    )
+
     Box(modifier = Modifier.fillMaxSize()) {
-        Column(modifier = Modifier.fillMaxSize()) {
+        Column(modifier = Modifier.fillMaxSize().blur(modalBlur)) {
             // Header
             Box(
                 modifier = Modifier

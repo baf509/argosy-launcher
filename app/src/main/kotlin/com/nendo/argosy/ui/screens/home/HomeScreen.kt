@@ -4,6 +4,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
@@ -76,6 +77,7 @@ import com.nendo.argosy.ui.components.InputButton
 import com.nendo.argosy.ui.components.SubtleFooterBar
 import com.nendo.argosy.ui.input.LocalInputDispatcher
 import com.nendo.argosy.ui.theme.Dimens
+import com.nendo.argosy.ui.theme.Motion
 import kotlinx.coroutines.launch
 
 @Composable
@@ -141,8 +143,15 @@ fun HomeScreen(
         }
     }
 
+    val modalBlur by animateDpAsState(
+        targetValue = if (uiState.showGameMenu) Motion.blurRadiusModal else 0.dp,
+        animationSpec = Motion.focusSpringDp,
+        label = "modalBlur"
+    )
+
     Box(modifier = Modifier.fillMaxSize()) {
-        AnimatedContent(
+        Box(modifier = Modifier.fillMaxSize().blur(modalBlur)) {
+            AnimatedContent(
             targetState = uiState.focusedGame?.backgroundPath,
             transitionSpec = {
                 fadeIn(tween(300)) togetherWith fadeOut(tween(300))
@@ -242,6 +251,7 @@ fun HomeScreen(
             } else {
                 Spacer(modifier = Modifier.height(32.dp))
             }
+        }
         }
 
         AnimatedVisibility(

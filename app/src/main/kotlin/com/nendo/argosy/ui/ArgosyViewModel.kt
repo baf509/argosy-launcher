@@ -9,6 +9,8 @@ import com.nendo.argosy.data.repository.GameRepository
 import com.nendo.argosy.ui.input.GamepadInputHandler
 import com.nendo.argosy.ui.input.HapticFeedbackManager
 import com.nendo.argosy.ui.input.InputHandler
+import com.nendo.argosy.ui.input.InputResult
+import com.nendo.argosy.ui.input.SoundFeedbackManager
 import com.nendo.argosy.ui.navigation.Screen
 import com.nendo.argosy.ui.notification.DownloadNotificationObserver
 import com.nendo.argosy.ui.notification.NotificationManager
@@ -47,6 +49,7 @@ class ArgosyViewModel @Inject constructor(
     preferencesRepository: UserPreferencesRepository,
     val gamepadInputHandler: GamepadInputHandler,
     val hapticManager: HapticFeedbackManager,
+    val soundManager: SoundFeedbackManager,
     val notificationManager: NotificationManager,
     downloadNotificationObserver: DownloadNotificationObserver,
     private val gameRepository: GameRepository,
@@ -57,6 +60,20 @@ class ArgosyViewModel @Inject constructor(
     init {
         downloadNotificationObserver.observe(viewModelScope)
         validateLocalFilesAtStartup()
+        observeFeedbackSettings(preferencesRepository)
+        downloadManager.clearCompleted()
+    }
+
+    private fun observeFeedbackSettings(preferencesRepository: UserPreferencesRepository) {
+        viewModelScope.launch {
+            preferencesRepository.userPreferences.collect { prefs ->
+                hapticManager.setEnabled(prefs.hapticEnabled)
+                hapticManager.setIntensity(prefs.hapticIntensity.amplitude)
+                soundManager.setEnabled(prefs.soundEnabled)
+                soundManager.setVolume(prefs.soundVolume)
+                soundManager.setSoundConfigs(prefs.soundConfigs)
+            }
+        }
     }
 
     private fun validateLocalFilesAtStartup() {
@@ -122,38 +139,38 @@ class ArgosyViewModel @Inject constructor(
         onNavigate: (String) -> Unit,
         onDismiss: () -> Unit
     ): InputHandler = object : InputHandler {
-        override fun onUp(): Boolean {
+        override fun onUp(): InputResult {
             if (_drawerFocusIndex.value > 0) {
                 _drawerFocusIndex.update { it - 1 }
-                return true
+                return InputResult.HANDLED
             }
-            return false
+            return InputResult.UNHANDLED
         }
 
-        override fun onDown(): Boolean {
+        override fun onDown(): InputResult {
             if (_drawerFocusIndex.value < drawerItems.lastIndex) {
                 _drawerFocusIndex.update { it + 1 }
-                return true
+                return InputResult.HANDLED
             }
-            return false
+            return InputResult.UNHANDLED
         }
 
-        override fun onLeft(): Boolean = false
-        override fun onRight(): Boolean = false
+        override fun onLeft(): InputResult = InputResult.UNHANDLED
+        override fun onRight(): InputResult = InputResult.UNHANDLED
 
-        override fun onConfirm(): Boolean {
+        override fun onConfirm(): InputResult {
             onNavigate(drawerItems[_drawerFocusIndex.value].route)
-            return true
+            return InputResult.HANDLED
         }
 
-        override fun onBack(): Boolean {
+        override fun onBack(): InputResult {
             onDismiss()
-            return true
+            return InputResult.HANDLED
         }
 
-        override fun onMenu(): Boolean {
+        override fun onMenu(): InputResult {
             onDismiss()
-            return true
+            return InputResult.HANDLED
         }
     }
 

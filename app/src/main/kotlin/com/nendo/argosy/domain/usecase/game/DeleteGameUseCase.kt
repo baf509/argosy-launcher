@@ -1,5 +1,6 @@
 package com.nendo.argosy.domain.usecase.game
 
+import com.nendo.argosy.data.local.dao.DownloadQueueDao
 import com.nendo.argosy.data.local.dao.GameDao
 import com.nendo.argosy.data.repository.GameRepository
 import kotlinx.coroutines.CoroutineScope
@@ -11,7 +12,8 @@ import javax.inject.Inject
 
 class DeleteGameUseCase @Inject constructor(
     private val gameDao: GameDao,
-    private val gameRepository: GameRepository
+    private val gameRepository: GameRepository,
+    private val downloadQueueDao: DownloadQueueDao
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -20,6 +22,7 @@ class DeleteGameUseCase @Inject constructor(
         val path = game.localPath ?: return false
 
         gameRepository.clearLocalPath(gameId)
+        downloadQueueDao.deleteByGameId(gameId)
 
         scope.launch {
             try {

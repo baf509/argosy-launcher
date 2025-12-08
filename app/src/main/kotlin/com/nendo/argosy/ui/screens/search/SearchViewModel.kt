@@ -6,6 +6,7 @@ import com.nendo.argosy.data.local.dao.GameDao
 import com.nendo.argosy.data.local.dao.PlatformDao
 import com.nendo.argosy.data.local.entity.GameEntity
 import com.nendo.argosy.ui.input.InputHandler
+import com.nendo.argosy.ui.input.InputResult
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -115,39 +116,39 @@ class SearchViewModel @Inject constructor(
         onGameSelect: (Long) -> Unit,
         onBack: () -> Unit
     ): InputHandler = object : InputHandler {
-        override fun onUp(): Boolean {
+        override fun onUp(): InputResult {
             val state = _uiState.value
             if (state.focusedIndex == 0) {
                 focusKeyboard()
             } else {
                 moveFocus(-1)
             }
-            return true
+            return InputResult.HANDLED
         }
 
-        override fun onDown(): Boolean {
+        override fun onDown(): InputResult {
             moveFocus(1)
-            return true
+            return InputResult.HANDLED
         }
 
-        override fun onLeft(): Boolean = false
-        override fun onRight(): Boolean = false
+        override fun onLeft(): InputResult = InputResult.UNHANDLED
+        override fun onRight(): InputResult = InputResult.UNHANDLED
 
-        override fun onConfirm(): Boolean {
+        override fun onConfirm(): InputResult {
             getSelectedGameId()?.let { onGameSelect(it) }
-            return true
+            return InputResult.HANDLED
         }
 
-        override fun onBack(): Boolean {
+        override fun onBack(): InputResult {
             val state = _uiState.value
             if (state.query.isNotEmpty()) {
                 clearSearch()
             } else {
                 onBack()
             }
-            return true
+            return InputResult.HANDLED
         }
 
-        override fun onMenu(): Boolean = false
+        override fun onMenu(): InputResult = InputResult.UNHANDLED
     }
 }

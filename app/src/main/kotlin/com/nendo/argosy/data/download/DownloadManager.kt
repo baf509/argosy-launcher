@@ -9,6 +9,8 @@ import com.nendo.argosy.data.local.entity.DownloadQueueEntity
 import com.nendo.argosy.data.model.GameSource
 import com.nendo.argosy.data.preferences.UserPreferencesRepository
 import com.nendo.argosy.data.remote.romm.RomMRepository
+import com.nendo.argosy.ui.input.SoundFeedbackManager
+import com.nendo.argosy.ui.input.SoundType
 import com.nendo.argosy.data.remote.romm.RomMResult
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
@@ -86,7 +88,8 @@ class DownloadManager @Inject constructor(
     private val gameDao: GameDao,
     private val downloadQueueDao: DownloadQueueDao,
     private val romMRepository: RomMRepository,
-    private val preferencesRepository: UserPreferencesRepository
+    private val preferencesRepository: UserPreferencesRepository,
+    private val soundManager: SoundFeedbackManager
 ) {
     private val _state = MutableStateFlow(DownloadQueueState())
     val state: StateFlow<DownloadQueueState> = _state.asStateFlow()
@@ -255,6 +258,7 @@ class DownloadManager @Inject constructor(
             }
 
             Log.d(TAG, "processQueue: starting ${next.gameTitle}")
+            soundManager.play(SoundType.DOWNLOAD_START)
 
             _state.value = _state.value.copy(
                 activeDownloads = _state.value.activeDownloads + next.copy(state = DownloadState.DOWNLOADING),
@@ -270,6 +274,7 @@ class DownloadManager @Inject constructor(
                 val finalProgress = when (result) {
                     is DownloadResult.Success -> {
                         downloadQueueDao.updateState(next.id, DownloadState.COMPLETED.name)
+                        soundManager.play(SoundType.DOWNLOAD_COMPLETE)
                         next.copy(
                             state = DownloadState.COMPLETED,
                             bytesDownloaded = result.bytesWritten
@@ -277,6 +282,7 @@ class DownloadManager @Inject constructor(
                     }
                     is DownloadResult.Failure -> {
                         downloadQueueDao.updateState(next.id, DownloadState.FAILED.name, result.reason)
+                        soundManager.play(SoundType.ERROR)
                         next.copy(
                             state = DownloadState.FAILED,
                             errorReason = result.reason
@@ -500,9 +506,21 @@ class DownloadManager @Inject constructor(
         val failed = downloadQueueDao.getFailedDownloads()
         if (failed.isEmpty()) return
 
-        Log.d(TAG, "retryFailedDownloads: retrying ${failed.size} failed downloads")
+        val retryable = failed.filter { entity ->
+            val reason = entity.errorReason ?: ""
+            !reason.contains("not found", ignoreCase = true) &&
+                !reason.contains("HTTP 400", ignoreCase = true) &&
+                !reason.contains("HTTP 404", ignoreCase = true)
+        }
 
-        for (entity in failed) {
+        if (retryable.isEmpty()) {
+            Log.d(TAG, "retryFailedDownloads: ${failed.size} failed but none retryable (permanent errors)")
+            return
+        }
+
+        Log.d(TAG, "retryFailedDownloads: retrying ${retryable.size} of ${failed.size} failed downloads")
+
+        for (entity in retryable) {
             downloadQueueDao.updateState(entity.id, DownloadState.QUEUED.name, null)
         }
 

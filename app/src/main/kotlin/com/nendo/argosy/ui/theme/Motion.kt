@@ -3,6 +3,7 @@ package com.nendo.argosy.ui.theme
 import androidx.compose.animation.core.AnimationSpec
 import androidx.compose.animation.core.spring
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 
 object Motion {
     // Unified animation specs for all focusable components
@@ -24,4 +25,15 @@ object Motion {
     // Glow
     const val glowAlphaFocused = 0.4f
     const val glowAlphaUnfocused = 0f
+
+    // Debounce
+    const val transitionDebounceMs = 200L
+
+    // Scroll focus
+    const val focusScrollDebounceMs = 60L
+    const val scrollPaddingPercent = 0.2f
+
+    // Blur radius for overlays
+    val blurRadiusModal = 8.dp
+    val blurRadiusDrawer = 24.dp
 }

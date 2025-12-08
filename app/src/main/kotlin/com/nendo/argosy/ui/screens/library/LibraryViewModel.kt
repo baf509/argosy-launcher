@@ -1,5 +1,6 @@
 package com.nendo.argosy.ui.screens.library
 
+import android.content.Intent
 import android.util.Log
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
@@ -15,16 +16,27 @@ import com.nendo.argosy.data.local.entity.PlatformEntity
 import com.nendo.argosy.data.model.GameSource
 import com.nendo.argosy.data.preferences.UiDensity
 import com.nendo.argosy.data.preferences.UserPreferencesRepository
+import com.nendo.argosy.data.emulator.LaunchResult
+import com.nendo.argosy.domain.usecase.download.DownloadGameUseCase
+import com.nendo.argosy.domain.usecase.download.DownloadResult
 import com.nendo.argosy.domain.usecase.game.DeleteGameUseCase
+import com.nendo.argosy.domain.usecase.game.LaunchGameUseCase
 import com.nendo.argosy.ui.input.InputHandler
+import com.nendo.argosy.ui.input.InputResult
+import com.nendo.argosy.ui.input.SoundFeedbackManager
+import com.nendo.argosy.ui.input.SoundType
 import com.nendo.argosy.ui.notification.NotificationManager
+import com.nendo.argosy.ui.notification.showError
 import com.nendo.argosy.ui.notification.showSuccess
 import com.nendo.argosy.ui.navigation.GameNavigationContext
 import com.nendo.argosy.ui.screens.home.HomePlatformUi
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.update
@@ -196,18 +208,28 @@ data class LibraryUiState(
 
 private const val TAG = "LibraryVM"
 
+sealed class LibraryEvent {
+    data class LaunchGame(val intent: Intent) : LibraryEvent()
+}
+
 @HiltViewModel
 class LibraryViewModel @Inject constructor(
     private val platformDao: PlatformDao,
     private val gameDao: GameDao,
     private val gameNavigationContext: GameNavigationContext,
     private val deleteGameUseCase: DeleteGameUseCase,
+    private val downloadGameUseCase: DownloadGameUseCase,
+    private val launchGameUseCase: LaunchGameUseCase,
     private val notificationManager: NotificationManager,
-    private val preferencesRepository: UserPreferencesRepository
+    private val preferencesRepository: UserPreferencesRepository,
+    private val soundManager: SoundFeedbackManager
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(LibraryUiState())
     val uiState: StateFlow<LibraryUiState> = _uiState.asStateFlow()
+
+    private val _events = MutableSharedFlow<LibraryEvent>()
+    val events: SharedFlow<LibraryEvent> = _events.asSharedFlow()
 
     private var gamesJob: Job? = null
 
@@ -363,34 +385,36 @@ class LibraryViewModel @Inject constructor(
         }
     }
 
-    fun moveFocus(direction: FocusMove) {
-        _uiState.update { state ->
-            if (state.games.isEmpty()) return@update state
+    fun moveFocus(direction: FocusMove): Boolean {
+        val state = _uiState.value
+        if (state.games.isEmpty()) return false
 
-            val cols = state.columnsCount
-            val total = state.games.size
-            val current = state.focusedIndex
+        val cols = state.columnsCount
+        val total = state.games.size
+        val current = state.focusedIndex
 
-            val newIndex = when (direction) {
-                FocusMove.UP -> {
-                    val target = current - cols
-                    if (target >= 0) target else current
-                }
-                FocusMove.DOWN -> {
-                    val target = current + cols
-                    if (target < total) target else current
-                }
-                FocusMove.LEFT -> {
-                    if (current % cols > 0) current - 1 else current
-                }
-                FocusMove.RIGHT -> {
-                    if (current % cols < cols - 1 && current + 1 < total) current + 1 else current
-                }
+        val newIndex = when (direction) {
+            FocusMove.UP -> {
+                val target = current - cols
+                if (target >= 0) target else null
             }
-
-            Log.d(TAG, "moveFocus: $direction, $current -> $newIndex (cols=$cols, total=$total)")
-            state.copy(focusedIndex = newIndex)
+            FocusMove.DOWN -> {
+                val target = current + cols
+                if (target < total) target else null
+            }
+            FocusMove.LEFT -> {
+                if (current % cols > 0) current - 1 else null
+            }
+            FocusMove.RIGHT -> {
+                if (current % cols < cols - 1 && current + 1 < total) current + 1 else null
+            }
         }
+
+        if (newIndex == null) return false
+
+        Log.d(TAG, "moveFocus: $direction, $current -> $newIndex (cols=$cols, total=$total)")
+        _uiState.update { it.copy(focusedIndex = newIndex) }
+        return true
     }
 
     fun setFilter(filter: LibraryFilter) {
@@ -399,6 +423,7 @@ class LibraryViewModel @Inject constructor(
     }
 
     fun toggleFilterMenu() {
+        val wasShowing = _uiState.value.showFilterMenu
         _uiState.update { state ->
             val newShowFilter = !state.showFilterMenu
             state.copy(
@@ -406,6 +431,11 @@ class LibraryViewModel @Inject constructor(
                 filterCategoryIndex = if (newShowFilter) 0 else state.filterCategoryIndex,
                 filterOptionIndex = if (newShowFilter) 0 else state.filterOptionIndex
             )
+        }
+        if (!wasShowing) {
+            soundManager.play(SoundType.OPEN_MODAL)
+        } else {
+            soundManager.play(SoundType.CLOSE_MODAL)
         }
     }
 
@@ -488,7 +518,13 @@ class LibraryViewModel @Inject constructor(
     }
 
     fun toggleQuickMenu() {
+        val wasShowing = _uiState.value.showQuickMenu
         _uiState.update { it.copy(showQuickMenu = !it.showQuickMenu, quickMenuFocusIndex = 0) }
+        if (!wasShowing) {
+            soundManager.play(SoundType.OPEN_MODAL)
+        } else {
+            soundManager.play(SoundType.CLOSE_MODAL)
+        }
     }
 
     fun moveQuickMenuFocus(delta: Int) {
@@ -499,22 +535,44 @@ class LibraryViewModel @Inject constructor(
         }
     }
 
-    fun confirmQuickMenuSelection(onGameSelect: (Long) -> Unit) {
-        val game = _uiState.value.focusedGame ?: return
-        when (_uiState.value.quickMenuFocusIndex) {
-            0 -> onGameSelect(game.id)
-            1 -> toggleFavorite(game.id)
-            2 -> onGameSelect(game.id)
+    fun confirmQuickMenuSelection(onGameSelect: (Long) -> Unit): InputResult {
+        val game = _uiState.value.focusedGame ?: return InputResult.HANDLED
+        return when (_uiState.value.quickMenuFocusIndex) {
+            0 -> {
+                if (game.isDownloaded) {
+                    launchGame(game.id)
+                } else {
+                    downloadGame(game.id)
+                }
+                toggleQuickMenu()
+                InputResult.HANDLED
+            }
+            1 -> {
+                val sound = if (game.isFavorite) SoundType.UNFAVORITE else SoundType.FAVORITE
+                toggleFavorite(game.id)
+                InputResult.handled(sound)
+            }
+            2 -> {
+                onGameSelect(game.id)
+                toggleQuickMenu()
+                InputResult.HANDLED
+            }
             3 -> {
                 if (game.isDownloaded) {
                     deleteLocalFile(game.id)
                 } else {
                     hideGame(game.id)
                 }
+                toggleQuickMenu()
+                InputResult.HANDLED
             }
-            4 -> hideGame(game.id)
+            4 -> {
+                hideGame(game.id)
+                toggleQuickMenu()
+                InputResult.HANDLED
+            }
+            else -> InputResult.HANDLED
         }
-        toggleQuickMenu()
     }
 
     fun hideGame(gameId: Long) {
@@ -530,16 +588,41 @@ class LibraryViewModel @Inject constructor(
         }
     }
 
-    fun launchGame(gameId: Long) {
+    private fun launchGame(gameId: Long) {
         viewModelScope.launch {
-            // TODO: Launch emulator with game
+            when (val result = launchGameUseCase(gameId)) {
+                is LaunchResult.Success -> {
+                    soundManager.play(SoundType.LAUNCH_GAME)
+                    _events.emit(LibraryEvent.LaunchGame(result.intent))
+                }
+                is LaunchResult.NoEmulator -> {
+                    notificationManager.showError("No emulator installed for this platform")
+                }
+                is LaunchResult.NoRomFile -> {
+                    notificationManager.showError("ROM file not found")
+                }
+                is LaunchResult.Error -> {
+                    notificationManager.showError(result.message)
+                }
+            }
+        }
+    }
+
+    private fun downloadGame(gameId: Long) {
+        viewModelScope.launch {
+            when (val result = downloadGameUseCase(gameId)) {
+                is DownloadResult.Queued -> { }
+                is DownloadResult.Error -> notificationManager.showError(result.message)
+            }
         }
     }
 
     fun toggleFavorite(gameId: Long) {
         viewModelScope.launch {
             val game = gameDao.getById(gameId) ?: return@launch
-            gameDao.updateFavorite(gameId, !game.isFavorite)
+            val newFavoriteState = !game.isFavorite
+            gameDao.updateFavorite(gameId, newFavoriteState)
+            soundManager.play(if (newFavoriteState) SoundType.FAVORITE else SoundType.UNFAVORITE)
             loadGames()
         }
     }
@@ -566,126 +649,130 @@ class LibraryViewModel @Inject constructor(
         onDrawerToggle: () -> Unit,
         onBack: () -> Unit
     ): InputHandler = object : InputHandler {
-        override fun onUp(): Boolean {
+        override fun onUp(): InputResult {
             val state = _uiState.value
-            when {
-                state.showFilterMenu -> moveFilterOptionFocus(-1)
-                state.showQuickMenu -> moveQuickMenuFocus(-1)
-                else -> moveFocus(FocusMove.UP)
+            return when {
+                state.showFilterMenu -> { moveFilterOptionFocus(-1); InputResult.HANDLED }
+                state.showQuickMenu -> { moveQuickMenuFocus(-1); InputResult.HANDLED }
+                else -> if (moveFocus(FocusMove.UP)) InputResult.HANDLED else InputResult.UNHANDLED
             }
-            return true
         }
 
-        override fun onDown(): Boolean {
+        override fun onDown(): InputResult {
             val state = _uiState.value
-            when {
-                state.showFilterMenu -> moveFilterOptionFocus(1)
-                state.showQuickMenu -> moveQuickMenuFocus(1)
-                else -> moveFocus(FocusMove.DOWN)
+            return when {
+                state.showFilterMenu -> { moveFilterOptionFocus(1); InputResult.HANDLED }
+                state.showQuickMenu -> { moveQuickMenuFocus(1); InputResult.HANDLED }
+                else -> if (moveFocus(FocusMove.DOWN)) InputResult.HANDLED else InputResult.UNHANDLED
             }
-            return true
         }
 
-        override fun onLeft(): Boolean {
+        override fun onLeft(): InputResult {
             val state = _uiState.value
-            when {
-                state.showFilterMenu -> moveFilterCategoryFocus(-1)
-                state.showQuickMenu -> return true
-                else -> moveFocus(FocusMove.LEFT)
+            return when {
+                state.showFilterMenu -> { moveFilterCategoryFocus(-1); InputResult.HANDLED }
+                state.showQuickMenu -> InputResult.HANDLED
+                else -> if (moveFocus(FocusMove.LEFT)) InputResult.HANDLED else InputResult.UNHANDLED
             }
-            return true
         }
 
-        override fun onRight(): Boolean {
+        override fun onRight(): InputResult {
             val state = _uiState.value
-            when {
-                state.showFilterMenu -> moveFilterCategoryFocus(1)
-                state.showQuickMenu -> return true
-                else -> moveFocus(FocusMove.RIGHT)
+            return when {
+                state.showFilterMenu -> { moveFilterCategoryFocus(1); InputResult.HANDLED }
+                state.showQuickMenu -> InputResult.HANDLED
+                else -> if (moveFocus(FocusMove.RIGHT)) InputResult.HANDLED else InputResult.UNHANDLED
             }
-            return true
         }
 
-        override fun onConfirm(): Boolean {
+        override fun onConfirm(): InputResult {
             val state = _uiState.value
-            when {
-                state.showFilterMenu -> confirmFilterSelection()
+            return when {
+                state.showFilterMenu -> {
+                    confirmFilterSelection()
+                    InputResult.HANDLED
+                }
                 state.showQuickMenu -> confirmQuickMenuSelection(onGameSelect)
-                else -> state.focusedGame?.let { game -> onGameSelect(game.id) }
+                else -> {
+                    state.focusedGame?.let { game -> onGameSelect(game.id) }
+                    InputResult.HANDLED
+                }
             }
-            return true
         }
 
-        override fun onBack(): Boolean {
+        override fun onBack(): InputResult {
             val state = _uiState.value
             return when {
                 state.showFilterMenu -> {
                     toggleFilterMenu()
-                    true
+                    InputResult.HANDLED
                 }
                 state.showQuickMenu -> {
                     toggleQuickMenu()
-                    true
+                    InputResult.HANDLED
                 }
                 else -> {
                     onBack()
-                    true
+                    InputResult.HANDLED
                 }
             }
         }
 
-        override fun onMenu(): Boolean {
+        override fun onMenu(): InputResult {
             if (_uiState.value.showQuickMenu) {
                 toggleQuickMenu()
-                return false
+                return InputResult.UNHANDLED
             }
             if (_uiState.value.showFilterMenu) {
                 toggleFilterMenu()
-                return false
+                return InputResult.UNHANDLED
             }
             onDrawerToggle()
-            return true
+            return InputResult.HANDLED
         }
 
-        override fun onSecondaryAction(): Boolean {
-            if (_uiState.value.showQuickMenu) return true
-            toggleFilterMenu()
-            return true
+        override fun onSecondaryAction(): InputResult {
+            val game = _uiState.value.focusedGame ?: return InputResult.UNHANDLED
+            if (_uiState.value.showQuickMenu || _uiState.value.showFilterMenu) return InputResult.UNHANDLED
+            toggleFavorite(game.id)
+            return InputResult.HANDLED
         }
 
-        override fun onContextMenu(): Boolean {
+        override fun onContextMenu(): InputResult {
+            if (_uiState.value.showQuickMenu) return InputResult.HANDLED
             if (_uiState.value.showFilterMenu) {
                 clearCurrentCategoryFilters()
-                return true
+                return InputResult.HANDLED
             }
-            return false
+            toggleFilterMenu()
+            return InputResult.HANDLED
         }
 
-        override fun onSelect(): Boolean {
+        override fun onSelect(): InputResult {
             if (_uiState.value.focusedGame != null) {
                 toggleQuickMenu()
             }
-            return true
+            return InputResult.HANDLED
         }
 
-        override fun onPrevSection(): Boolean {
+        override fun onPrevSection(): InputResult {
             val state = _uiState.value
             when {
                 state.showFilterMenu -> moveFilterOptionFocus(-5)
-                state.showQuickMenu -> return true
+                state.showQuickMenu -> return InputResult.HANDLED
                 else -> previousPlatform()
             }
-            return true
+            return InputResult.HANDLED
         }
 
-        override fun onNextSection(): Boolean {
+        override fun onNextSection(): InputResult {
             val state = _uiState.value
             when {
                 state.showFilterMenu -> moveFilterOptionFocus(5)
-                state.showQuickMenu -> return true
+                state.showQuickMenu -> return InputResult.HANDLED
                 else -> nextPlatform()
             }
-            return true
+            return InputResult.HANDLED
         }
     }
 }

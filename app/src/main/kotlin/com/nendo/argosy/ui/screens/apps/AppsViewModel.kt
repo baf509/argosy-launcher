@@ -12,6 +12,9 @@ import com.nendo.argosy.data.preferences.UserPreferencesRepository
 import com.nendo.argosy.data.repository.AppsRepository
 import com.nendo.argosy.data.repository.InstalledApp
 import com.nendo.argosy.ui.input.InputHandler
+import com.nendo.argosy.ui.input.InputResult
+import com.nendo.argosy.ui.input.SoundFeedbackManager
+import com.nendo.argosy.ui.input.SoundType
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -77,6 +80,7 @@ sealed class AppsEvent {
 class AppsViewModel @Inject constructor(
     private val appsRepository: AppsRepository,
     private val preferencesRepository: UserPreferencesRepository,
+    private val soundManager: SoundFeedbackManager,
     @ApplicationContext private val context: Context
 ) : ViewModel() {
 
@@ -171,10 +175,12 @@ class AppsViewModel @Inject constructor(
     fun showContextMenu() {
         if (_uiState.value.focusedApp == null) return
         _uiState.update { it.copy(showContextMenu = true, contextMenuFocusIndex = 0) }
+        soundManager.play(SoundType.OPEN_MODAL)
     }
 
     fun dismissContextMenu() {
         _uiState.update { it.copy(showContextMenu = false, contextMenuFocusIndex = 0) }
+        soundManager.play(SoundType.CLOSE_MODAL)
     }
 
     fun moveContextMenuFocus(delta: Int) {
@@ -347,93 +353,93 @@ class AppsViewModel @Inject constructor(
         onDrawerToggle: () -> Unit,
         onBack: () -> Unit
     ): InputHandler = object : InputHandler {
-        override fun onUp(): Boolean {
+        override fun onUp(): InputResult {
             val state = _uiState.value
             when {
                 state.showContextMenu -> moveContextMenuFocus(-1)
                 state.isReorderMode -> moveAppInReorderMode(FocusDirection.UP)
                 else -> moveFocus(FocusDirection.UP)
             }
-            return true
+            return InputResult.HANDLED
         }
 
-        override fun onDown(): Boolean {
+        override fun onDown(): InputResult {
             val state = _uiState.value
             when {
                 state.showContextMenu -> moveContextMenuFocus(1)
                 state.isReorderMode -> moveAppInReorderMode(FocusDirection.DOWN)
                 else -> moveFocus(FocusDirection.DOWN)
             }
-            return true
+            return InputResult.HANDLED
         }
 
-        override fun onLeft(): Boolean {
+        override fun onLeft(): InputResult {
             val state = _uiState.value
             when {
-                state.showContextMenu -> return false
+                state.showContextMenu -> return InputResult.UNHANDLED
                 state.isReorderMode -> moveAppInReorderMode(FocusDirection.LEFT)
                 else -> moveFocus(FocusDirection.LEFT)
             }
-            return true
+            return InputResult.HANDLED
         }
 
-        override fun onRight(): Boolean {
+        override fun onRight(): InputResult {
             val state = _uiState.value
             when {
-                state.showContextMenu -> return false
+                state.showContextMenu -> return InputResult.UNHANDLED
                 state.isReorderMode -> moveAppInReorderMode(FocusDirection.RIGHT)
                 else -> moveFocus(FocusDirection.RIGHT)
             }
-            return true
+            return InputResult.HANDLED
         }
 
-        override fun onConfirm(): Boolean {
+        override fun onConfirm(): InputResult {
             val state = _uiState.value
             when {
                 state.showContextMenu -> confirmContextMenuSelection()
                 state.isReorderMode -> saveReorderAndExit()
                 else -> state.focusedApp?.let { launchApp(it.packageName) }
             }
-            return true
+            return InputResult.HANDLED
         }
 
-        override fun onBack(): Boolean {
+        override fun onBack(): InputResult {
             val state = _uiState.value
             when {
                 state.showContextMenu -> dismissContextMenu()
                 state.isReorderMode -> cancelReorderAndExit()
                 else -> onBack()
             }
-            return true
+            return InputResult.HANDLED
         }
 
-        override fun onMenu(): Boolean {
+        override fun onMenu(): InputResult {
             if (_uiState.value.showContextMenu) {
                 dismissContextMenu()
-                return false
+                return InputResult.UNHANDLED
             }
             onDrawerToggle()
-            return true
+            return InputResult.HANDLED
         }
 
-        override fun onSelect(): Boolean {
+        override fun onSelect(): InputResult {
             if (!_uiState.value.isReorderMode && !_uiState.value.showContextMenu) {
                 showContextMenu()
             }
-            return true
+            return InputResult.HANDLED
         }
 
-        override fun onSecondaryAction(): Boolean {
+        override fun onSecondaryAction(): InputResult {
             val state = _uiState.value
             if (!state.showContextMenu && !state.isReorderMode) {
                 enterReorderMode()
             }
-            return true
+            return InputResult.HANDLED
         }
 
-        override fun onContextMenu(): Boolean {
+        override fun onContextMenu(): InputResult {
             toggleShowHidden()
-            return true
+            return InputResult.HANDLED
         }
     }
 }

@@ -20,6 +20,9 @@ import com.nendo.argosy.domain.usecase.game.ConfigureEmulatorUseCase
 import com.nendo.argosy.domain.usecase.game.DeleteGameUseCase
 import com.nendo.argosy.domain.usecase.game.LaunchGameUseCase
 import com.nendo.argosy.ui.input.InputHandler
+import com.nendo.argosy.ui.input.InputResult
+import com.nendo.argosy.ui.input.SoundFeedbackManager
+import com.nendo.argosy.ui.input.SoundType
 import com.nendo.argosy.ui.navigation.GameNavigationContext
 import com.nendo.argosy.ui.notification.NotificationManager
 import com.nendo.argosy.ui.notification.showError
@@ -114,7 +117,8 @@ class GameDetailViewModel @Inject constructor(
     private val launchGameUseCase: LaunchGameUseCase,
     private val configureEmulatorUseCase: ConfigureEmulatorUseCase,
     private val deleteGameUseCase: DeleteGameUseCase,
-    private val romMRepository: RomMRepository
+    private val romMRepository: RomMRepository,
+    private val soundManager: SoundFeedbackManager
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(GameDetailUiState())
@@ -255,6 +259,7 @@ class GameDetailViewModel @Inject constructor(
 
             when (val result = launchGameUseCase(currentGameId)) {
                 is LaunchResult.Success -> {
+                    soundManager.play(SoundType.LAUNCH_GAME)
                     _launchEvents.emit(LaunchEvent.Launch(result.intent))
                 }
                 is LaunchResult.NoEmulator -> {
@@ -273,17 +278,25 @@ class GameDetailViewModel @Inject constructor(
     fun toggleFavorite() {
         viewModelScope.launch {
             val game = gameDao.getById(currentGameId) ?: return@launch
-            gameDao.updateFavorite(currentGameId, !game.isFavorite)
+            val newFavoriteState = !game.isFavorite
+            gameDao.updateFavorite(currentGameId, newFavoriteState)
+            soundManager.play(if (newFavoriteState) SoundType.FAVORITE else SoundType.UNFAVORITE)
             loadGame(currentGameId)
         }
     }
 
     fun toggleMoreOptions() {
+        val wasShowing = _uiState.value.showMoreOptions
         _uiState.update {
             it.copy(
                 showMoreOptions = !it.showMoreOptions,
                 moreOptionsFocusIndex = 0
             )
+        }
+        if (!wasShowing) {
+            soundManager.play(SoundType.OPEN_MODAL)
+        } else {
+            soundManager.play(SoundType.CLOSE_MODAL)
         }
     }
 
@@ -332,10 +345,12 @@ class GameDetailViewModel @Inject constructor(
                 emulatorPickerFocusIndex = 0
             )
         }
+        soundManager.play(SoundType.OPEN_MODAL)
     }
 
     fun dismissEmulatorPicker() {
         _uiState.update { it.copy(showEmulatorPicker = false) }
+        soundManager.play(SoundType.CLOSE_MODAL)
     }
 
     fun moveEmulatorPickerFocus(delta: Int) {
@@ -383,10 +398,12 @@ class GameDetailViewModel @Inject constructor(
                 ratingPickerValue = currentValue
             )
         }
+        soundManager.play(SoundType.OPEN_MODAL)
     }
 
     fun dismissRatingPicker() {
         _uiState.update { it.copy(showRatingPicker = false) }
+        soundManager.play(SoundType.CLOSE_MODAL)
     }
 
     fun changeRatingValue(delta: Int) {
@@ -481,63 +498,63 @@ class GameDetailViewModel @Inject constructor(
         onScrollUp: () -> Unit = {},
         onScrollDown: () -> Unit = {}
     ): InputHandler = object : InputHandler {
-        override fun onUp(): Boolean {
+        override fun onUp(): InputResult {
             val state = _uiState.value
             when {
-                state.showRatingPicker -> return false
+                state.showRatingPicker -> return InputResult.UNHANDLED
                 state.showEmulatorPicker -> moveEmulatorPickerFocus(-1)
                 state.showMoreOptions -> moveOptionsFocus(-1)
                 else -> onScrollUp()
             }
-            return true
+            return InputResult.HANDLED
         }
 
-        override fun onDown(): Boolean {
+        override fun onDown(): InputResult {
             val state = _uiState.value
             when {
-                state.showRatingPicker -> return false
+                state.showRatingPicker -> return InputResult.UNHANDLED
                 state.showEmulatorPicker -> moveEmulatorPickerFocus(1)
                 state.showMoreOptions -> moveOptionsFocus(1)
                 else -> onScrollDown()
             }
-            return true
+            return InputResult.HANDLED
         }
 
-        override fun onLeft(): Boolean {
+        override fun onLeft(): InputResult {
             val state = _uiState.value
             when {
                 state.showRatingPicker -> {
                     changeRatingValue(-1)
-                    return true
+                    return InputResult.HANDLED
                 }
-                state.showMoreOptions || state.showEmulatorPicker -> return false
+                state.showMoreOptions || state.showEmulatorPicker -> return InputResult.UNHANDLED
                 else -> {
                     gameNavigationContext.getPreviousGameId(currentGameId)?.let { prevId ->
                         loadGame(prevId)
                     }
-                    return true
+                    return InputResult.HANDLED
                 }
             }
         }
 
-        override fun onRight(): Boolean {
+        override fun onRight(): InputResult {
             val state = _uiState.value
             when {
                 state.showRatingPicker -> {
                     changeRatingValue(1)
-                    return true
+                    return InputResult.HANDLED
                 }
-                state.showMoreOptions || state.showEmulatorPicker -> return false
+                state.showMoreOptions || state.showEmulatorPicker -> return InputResult.UNHANDLED
                 else -> {
                     gameNavigationContext.getNextGameId(currentGameId)?.let { nextId ->
                         loadGame(nextId)
                     }
-                    return true
+                    return InputResult.HANDLED
                 }
             }
         }
 
-        override fun onConfirm(): Boolean {
+        override fun onConfirm(): InputResult {
             val state = _uiState.value
             when {
                 state.showRatingPicker -> confirmRating()
@@ -545,10 +562,10 @@ class GameDetailViewModel @Inject constructor(
                 state.showMoreOptions -> confirmOptionSelection(onBack)
                 else -> primaryAction()
             }
-            return true
+            return InputResult.HANDLED
         }
 
-        override fun onBack(): Boolean {
+        override fun onBack(): InputResult {
             val state = _uiState.value
             when {
                 state.showRatingPicker -> dismissRatingPicker()
@@ -556,34 +573,38 @@ class GameDetailViewModel @Inject constructor(
                 state.showMoreOptions -> toggleMoreOptions()
                 else -> onBack()
             }
-            return true
+            return InputResult.HANDLED
         }
 
-        override fun onMenu(): Boolean {
+        override fun onMenu(): InputResult {
             val state = _uiState.value
             if (state.showRatingPicker) {
                 dismissRatingPicker()
-                return false
+                return InputResult.UNHANDLED
             }
             if (state.showMoreOptions) {
                 toggleMoreOptions()
-                return false
+                return InputResult.UNHANDLED
             }
             if (state.showEmulatorPicker) {
                 dismissEmulatorPicker()
-                return false
+                return InputResult.UNHANDLED
             }
-            return false
+            return InputResult.UNHANDLED
         }
 
-        override fun onContextMenu(): Boolean {
+        override fun onSecondaryAction(): InputResult {
             toggleFavorite()
-            return true
+            return InputResult.HANDLED
         }
 
-        override fun onSelect(): Boolean {
+        override fun onContextMenu(): InputResult {
+            return InputResult.UNHANDLED
+        }
+
+        override fun onSelect(): InputResult {
             toggleMoreOptions()
-            return true
+            return InputResult.HANDLED
         }
     }
 }
