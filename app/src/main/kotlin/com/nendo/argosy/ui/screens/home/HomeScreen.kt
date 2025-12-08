@@ -52,13 +52,11 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
-import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
@@ -80,6 +78,7 @@ import com.nendo.argosy.ui.components.FooterHint
 import com.nendo.argosy.ui.components.GameCard
 import com.nendo.argosy.ui.components.InputButton
 import com.nendo.argosy.ui.components.SubtleFooterBar
+import com.nendo.argosy.ui.components.SystemStatusBar
 import com.nendo.argosy.ui.theme.Dimens
 import com.nendo.argosy.ui.theme.Motion
 import kotlinx.coroutines.launch
@@ -286,15 +285,6 @@ private fun HomeHeader(
     sectionTitle: String,
     showPlatformNav: Boolean
 ) {
-    val currentTime = remember { mutableLongStateOf(System.currentTimeMillis()) }
-
-    LaunchedEffect(Unit) {
-        while (true) {
-            delay(60_000L - (System.currentTimeMillis() % 60_000L))
-            currentTime.longValue = System.currentTimeMillis()
-        }
-    }
-
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -342,12 +332,7 @@ private fun HomeHeader(
             }
         }
 
-        Text(
-            text = java.text.SimpleDateFormat("h:mm a", java.util.Locale.getDefault())
-                .format(java.util.Date(currentTime.longValue)),
-            style = MaterialTheme.typography.titleMedium,
-            color = Color.White.copy(alpha = 0.8f)
-        )
+        SystemStatusBar()
     }
 }
 

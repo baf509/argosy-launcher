@@ -53,6 +53,12 @@ fun MainDrawer(
 ) {
     ModalDrawerSheet(modifier = modifier) {
         Column(modifier = Modifier.padding(vertical = 24.dp)) {
+            DrawerStatusBar()
+            HorizontalDivider(
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp),
+                color = MaterialTheme.colorScheme.outlineVariant
+            )
+
             items.forEachIndexed { index, item ->
                 if (index == items.lastIndex) {
                     HorizontalDivider(
@@ -79,6 +85,20 @@ fun MainDrawer(
 
             RomMStatusFooter(isConnected = drawerState.rommConnected)
         }
+    }
+}
+
+@Composable
+private fun DrawerStatusBar() {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        SystemStatusBar(
+            contentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+        )
     }
 }
 
