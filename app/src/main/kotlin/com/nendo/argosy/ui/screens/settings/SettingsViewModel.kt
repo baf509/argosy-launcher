@@ -35,6 +35,8 @@ import com.nendo.argosy.domain.usecase.game.ConfigureEmulatorUseCase
 import com.nendo.argosy.domain.usecase.sync.SyncLibraryResult
 import com.nendo.argosy.domain.usecase.sync.SyncLibraryUseCase
 import com.nendo.argosy.data.repository.GameRepository
+import com.nendo.argosy.ui.input.ControllerDetector
+import com.nendo.argosy.ui.input.DetectedIconLayout
 import com.nendo.argosy.ui.input.HapticFeedbackManager
 import com.nendo.argosy.ui.input.HapticPattern
 import com.nendo.argosy.ui.input.InputHandler
@@ -106,7 +108,10 @@ data class DisplayState(
 data class ControlsState(
     val hapticEnabled: Boolean = true,
     val hapticIntensity: HapticIntensity = HapticIntensity.MEDIUM,
-    val nintendoButtonLayout: Boolean = false,
+    val swapAB: Boolean = false,
+    val swapXY: Boolean = false,
+    val abIconLayout: String = "auto",
+    val detectedLayout: String? = null,
     val swapStartSelect: Boolean = false
 )
 
@@ -289,7 +294,10 @@ class SettingsViewModel @Inject constructor(
                     controls = state.controls.copy(
                         hapticEnabled = prefs.hapticEnabled,
                         hapticIntensity = prefs.hapticIntensity,
-                        nintendoButtonLayout = prefs.nintendoButtonLayout,
+                        swapAB = prefs.swapAB,
+                        swapXY = prefs.swapXY,
+                        abIconLayout = prefs.abIconLayout,
+                        detectedLayout = detectControllerLayout(),
                         swapStartSelect = prefs.swapStartSelect
                     ),
                     sounds = state.sounds.copy(
@@ -759,10 +767,42 @@ class SettingsViewModel @Inject constructor(
     private val _openCustomSoundPickerEvent = MutableSharedFlow<SoundType>()
     val openCustomSoundPickerEvent: SharedFlow<SoundType> = _openCustomSoundPickerEvent.asSharedFlow()
 
-    fun setNintendoButtonLayout(enabled: Boolean) {
+    fun setSwapAB(enabled: Boolean) {
         viewModelScope.launch {
-            preferencesRepository.setNintendoButtonLayout(enabled)
-            _uiState.update { it.copy(controls = it.controls.copy(nintendoButtonLayout = enabled)) }
+            preferencesRepository.setSwapAB(enabled)
+            _uiState.update { it.copy(controls = it.controls.copy(swapAB = enabled)) }
+        }
+    }
+
+    fun setSwapXY(enabled: Boolean) {
+        viewModelScope.launch {
+            preferencesRepository.setSwapXY(enabled)
+            _uiState.update { it.copy(controls = it.controls.copy(swapXY = enabled)) }
+        }
+    }
+
+    fun setABIconLayout(layout: String) {
+        viewModelScope.launch {
+            preferencesRepository.setABIconLayout(layout)
+            _uiState.update { it.copy(controls = it.controls.copy(abIconLayout = layout)) }
+        }
+    }
+
+    fun cycleABIconLayout() {
+        val current = _uiState.value.controls.abIconLayout
+        val next = when (current) {
+            "auto" -> "xbox"
+            "xbox" -> "nintendo"
+            else -> "auto"
+        }
+        setABIconLayout(next)
+    }
+
+    private fun detectControllerLayout(): String? {
+        return when (ControllerDetector.detectFromActiveGamepad()) {
+            DetectedIconLayout.XBOX -> "xbox"
+            DetectedIconLayout.NINTENDO -> "nintendo"
+            null -> null
         }
     }
 
@@ -1276,15 +1316,19 @@ class SettingsViewModel @Inject constructor(
                     when (state.focusedIndex) {
                         0 -> { setHapticEnabled(!state.controls.hapticEnabled); true }
                         1 -> { cycleHapticIntensity(); false }
-                        2 -> { setNintendoButtonLayout(!state.controls.nintendoButtonLayout); true }
-                        3 -> { setSwapStartSelect(!state.controls.swapStartSelect); true }
+                        2 -> { setSwapAB(!state.controls.swapAB); true }
+                        3 -> { setSwapXY(!state.controls.swapXY); true }
+                        4 -> { cycleABIconLayout(); false }
+                        5 -> { setSwapStartSelect(!state.controls.swapStartSelect); true }
                         else -> false
                     }
                 } else {
                     when (state.focusedIndex) {
                         0 -> { setHapticEnabled(!state.controls.hapticEnabled); true }
-                        1 -> { setNintendoButtonLayout(!state.controls.nintendoButtonLayout); true }
-                        2 -> { setSwapStartSelect(!state.controls.swapStartSelect); true }
+                        1 -> { setSwapAB(!state.controls.swapAB); true }
+                        2 -> { setSwapXY(!state.controls.swapXY); true }
+                        3 -> { cycleABIconLayout(); false }
+                        4 -> { setSwapStartSelect(!state.controls.swapStartSelect); true }
                         else -> false
                     }
                 }

@@ -18,12 +18,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.unit.dp
 import com.nendo.argosy.ui.icons.InputIcons
-import com.nendo.argosy.ui.input.LocalNintendoLayout
+import com.nendo.argosy.ui.input.LocalABIconsSwapped
 import com.nendo.argosy.ui.input.LocalSwapStartSelect
 import com.nendo.argosy.ui.theme.Dimens
 
 enum class InputButton {
-    A, B, X, Y,
+    SOUTH, EAST, WEST, NORTH,
     DPAD, DPAD_UP, DPAD_DOWN, DPAD_LEFT, DPAD_RIGHT, DPAD_HORIZONTAL, DPAD_VERTICAL,
     LB, RB, LT, RT,
     START, SELECT
@@ -37,18 +37,18 @@ private fun InputButton.category(): HintCategory = when (this) {
     InputButton.DPAD_HORIZONTAL, InputButton.DPAD_VERTICAL -> HintCategory.DPAD
     InputButton.LB, InputButton.RB, InputButton.LT, InputButton.RT,
     InputButton.START, InputButton.SELECT -> HintCategory.SHOULDER_MENU
-    InputButton.A, InputButton.B, InputButton.X, InputButton.Y -> HintCategory.FACE
+    InputButton.SOUTH, InputButton.EAST, InputButton.WEST, InputButton.NORTH -> HintCategory.FACE
 }
 
 @Composable
 private fun InputButton.toPainter(): Painter {
-    val nintendoLayout = LocalNintendoLayout.current
+    val abIconsSwapped = LocalABIconsSwapped.current
     val swapStartSelect = LocalSwapStartSelect.current
     return when (this) {
-        InputButton.A -> if (nintendoLayout) InputIcons.FaceRight else InputIcons.FaceBottom
-        InputButton.B -> if (nintendoLayout) InputIcons.FaceBottom else InputIcons.FaceRight
-        InputButton.X -> InputIcons.FaceLeft
-        InputButton.Y -> InputIcons.FaceTop
+        InputButton.SOUTH -> if (abIconsSwapped) InputIcons.FaceRight else InputIcons.FaceBottom
+        InputButton.EAST -> if (abIconsSwapped) InputIcons.FaceBottom else InputIcons.FaceRight
+        InputButton.WEST -> InputIcons.FaceLeft
+        InputButton.NORTH -> InputIcons.FaceTop
         InputButton.DPAD -> InputIcons.Dpad
         InputButton.DPAD_UP -> InputIcons.DpadUp
         InputButton.DPAD_DOWN -> InputIcons.DpadDown
@@ -98,10 +98,10 @@ fun FooterHint(
 }
 
 private fun InputButton.faceButtonPriority(): Int = when (this) {
-    InputButton.Y -> 0
-    InputButton.X -> 1
-    InputButton.B -> 2
-    InputButton.A -> 3
+    InputButton.NORTH -> 0
+    InputButton.WEST -> 1
+    InputButton.EAST -> 2
+    InputButton.SOUTH -> 3
     else -> 0
 }
 

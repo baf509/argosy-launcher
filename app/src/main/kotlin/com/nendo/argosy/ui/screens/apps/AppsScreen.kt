@@ -223,15 +223,15 @@ fun AppsScreen(
                 hints = when {
                     uiState.isReorderMode -> listOf(
                         InputButton.DPAD to "Move",
-                        InputButton.A to "Save",
-                        InputButton.B to "Cancel"
+                        InputButton.SOUTH to "Save",
+                        InputButton.EAST to "Cancel"
                     )
                     else -> listOf(
-                        InputButton.A to "Open",
-                        InputButton.B to "Back",
-                        InputButton.X to "Reorder",
+                        InputButton.SOUTH to "Open",
+                        InputButton.EAST to "Back",
+                        InputButton.WEST to "Reorder",
                         InputButton.SELECT to "Options",
-                        InputButton.Y to if (uiState.showHiddenApps) "Show Apps" else "Show Hidden"
+                        InputButton.NORTH to if (uiState.showHiddenApps) "Show Apps" else "Show Hidden"
                     )
                 }
             )

@@ -517,15 +517,45 @@ private fun ControlsSection(uiState: SettingsUiState, viewModel: SettingsViewMod
         item {
             val focusIndex = if (uiState.controls.hapticEnabled) 2 else 1
             SwitchPreference(
-                title = "Nintendo Button Layout",
-                subtitle = "Swap A/B button mappings",
-                isEnabled = uiState.controls.nintendoButtonLayout,
+                title = "Swap A/B",
+                subtitle = "Swap confirm and back button actions",
+                isEnabled = uiState.controls.swapAB,
                 isFocused = uiState.focusedIndex == focusIndex,
-                onToggle = { viewModel.setNintendoButtonLayout(it) }
+                onToggle = { viewModel.setSwapAB(it) }
             )
         }
         item {
             val focusIndex = if (uiState.controls.hapticEnabled) 3 else 2
+            SwitchPreference(
+                title = "Swap X/Y",
+                subtitle = "Swap context menu and secondary actions",
+                isEnabled = uiState.controls.swapXY,
+                isFocused = uiState.focusedIndex == focusIndex,
+                onToggle = { viewModel.setSwapXY(it) }
+            )
+        }
+        item {
+            val focusIndex = if (uiState.controls.hapticEnabled) 4 else 3
+            val detectedLabel = when (uiState.controls.detectedLayout) {
+                "xbox" -> "Xbox"
+                "nintendo" -> "Nintendo"
+                else -> "Unknown"
+            }
+            val layoutLabel = when (uiState.controls.abIconLayout) {
+                "auto" -> "Auto ($detectedLabel)"
+                "xbox" -> "Xbox Style"
+                "nintendo" -> "Nintendo Style"
+                else -> "Auto ($detectedLabel)"
+            }
+            CyclePreference(
+                title = "A/B Button Icons",
+                value = layoutLabel,
+                isFocused = uiState.focusedIndex == focusIndex,
+                onClick = { viewModel.cycleABIconLayout() }
+            )
+        }
+        item {
+            val focusIndex = if (uiState.controls.hapticEnabled) 5 else 4
             SwitchPreference(
                 title = "Swap Start/Select",
                 subtitle = "Flip the Start and Select button functions",
@@ -719,9 +749,9 @@ private fun SoundPickerPopup(
 
             FooterBar(
                 hints = listOf(
-                    InputButton.X to "Preview",
-                    InputButton.A to "Select",
-                    InputButton.B to "Close"
+                    InputButton.WEST to "Preview",
+                    InputButton.SOUTH to "Select",
+                    InputButton.EAST to "Close"
                 )
             )
         }
@@ -1236,8 +1266,8 @@ private fun RegionPickerPopup(
             FooterBar(
                 hints = listOf(
                     InputButton.DPAD to "Navigate",
-                    InputButton.A to "Toggle",
-                    InputButton.B to "Close"
+                    InputButton.SOUTH to "Toggle",
+                    InputButton.EAST to "Close"
                 )
             )
         }
@@ -1538,8 +1568,8 @@ private fun SettingsFooter() {
     FooterBar(
         hints = listOf(
             InputButton.DPAD to "Navigate",
-            InputButton.A to "Select",
-            InputButton.B to "Back"
+            InputButton.SOUTH to "Select",
+            InputButton.EAST to "Back"
         )
     )
 }
@@ -1685,8 +1715,8 @@ private fun EmulatorPickerPopup(
             FooterBar(
                 hints = listOf(
                     InputButton.DPAD to "Navigate",
-                    InputButton.A to "Select",
-                    InputButton.B to "Close"
+                    InputButton.SOUTH to "Select",
+                    InputButton.EAST to "Close"
                 )
             )
         }

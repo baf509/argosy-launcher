@@ -357,9 +357,9 @@ private fun LibraryFooter(focusedGame: LibraryGameUi?) {
     FooterBar(
         hints = listOf(
             InputButton.DPAD to "Navigate",
-            InputButton.A to "Details",
-            InputButton.Y to if (focusedGame?.isFavorite == true) "Unfavorite" else "Favorite",
-            InputButton.X to "Filter",
+            InputButton.SOUTH to "Details",
+            InputButton.NORTH to if (focusedGame?.isFavorite == true) "Unfavorite" else "Favorite",
+            InputButton.WEST to "Filter",
             InputButton.SELECT to "Quick Menu"
         )
     )
@@ -511,9 +511,9 @@ private fun FilterMenuOverlay(
             FooterBar(
                 hints = listOf(
                     InputButton.DPAD to "Navigate",
-                    InputButton.X to "Reset",
-                    InputButton.A to if (isMultiSelect) "Toggle" else "Select",
-                    InputButton.B to "Close"
+                    InputButton.WEST to "Reset",
+                    InputButton.SOUTH to if (isMultiSelect) "Toggle" else "Select",
+                    InputButton.EAST to "Close"
                 )
             )
         }

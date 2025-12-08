@@ -26,7 +26,7 @@ import com.nendo.argosy.ui.components.MainDrawer
 import com.nendo.argosy.ui.input.GamepadEvent
 import com.nendo.argosy.ui.input.InputDispatcher
 import com.nendo.argosy.ui.input.LocalInputDispatcher
-import com.nendo.argosy.ui.input.LocalNintendoLayout
+import com.nendo.argosy.ui.input.LocalABIconsSwapped
 import com.nendo.argosy.ui.input.LocalSwapStartSelect
 import com.nendo.argosy.ui.input.SoundType
 import com.nendo.argosy.ui.navigation.NavGraph
@@ -142,7 +142,7 @@ fun ArgosyApp(
 
     CompositionLocalProvider(
         LocalInputDispatcher provides inputDispatcher,
-        LocalNintendoLayout provides uiState.nintendoButtonLayout,
+        LocalABIconsSwapped provides uiState.abIconsSwapped,
         LocalSwapStartSelect provides uiState.swapStartSelect
     ) {
         Box(modifier = Modifier.fillMaxSize()) {

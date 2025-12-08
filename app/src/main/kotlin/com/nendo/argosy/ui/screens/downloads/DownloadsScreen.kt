@@ -170,12 +170,12 @@ fun DownloadsScreen(
             val footerHints = buildList {
                 add(InputButton.DPAD_VERTICAL to "Navigate")
                 if (uiState.canToggle) {
-                    add(InputButton.A to uiState.toggleLabel)
+                    add(InputButton.SOUTH to uiState.toggleLabel)
                 }
                 if (uiState.canCancel) {
-                    add(InputButton.X to "Cancel")
+                    add(InputButton.WEST to "Cancel")
                 }
-                add(InputButton.B to "Back")
+                add(InputButton.EAST to "Back")
             }
 
             FooterBar(

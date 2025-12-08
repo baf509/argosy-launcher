@@ -34,7 +34,9 @@ class UserPreferencesRepository @Inject constructor(
         val HAPTIC_INTENSITY = stringPreferencesKey("haptic_intensity")
         val SOUND_ENABLED = booleanPreferencesKey("sound_enabled")
         val SOUND_VOLUME = intPreferencesKey("sound_volume")
-        val NINTENDO_BUTTON_LAYOUT = booleanPreferencesKey("nintendo_button_layout")
+        val SWAP_AB = booleanPreferencesKey("nintendo_button_layout")  // Keep old key for migration
+        val SWAP_XY = booleanPreferencesKey("swap_xy")
+        val AB_ICON_LAYOUT = stringPreferencesKey("ab_icon_layout")  // "auto", "xbox", "nintendo"
         val SWAP_START_SELECT = booleanPreferencesKey("swap_start_select")
         val ANIMATION_SPEED = stringPreferencesKey("animation_speed")
         val LAST_ROMM_SYNC = stringPreferencesKey("last_romm_sync")
@@ -71,7 +73,9 @@ class UserPreferencesRepository @Inject constructor(
             hapticIntensity = HapticIntensity.fromString(prefs[Keys.HAPTIC_INTENSITY]),
             soundEnabled = prefs[Keys.SOUND_ENABLED] ?: false,
             soundVolume = prefs[Keys.SOUND_VOLUME] ?: 40,
-            nintendoButtonLayout = prefs[Keys.NINTENDO_BUTTON_LAYOUT] ?: false,
+            swapAB = prefs[Keys.SWAP_AB] ?: false,
+            swapXY = prefs[Keys.SWAP_XY] ?: false,
+            abIconLayout = prefs[Keys.AB_ICON_LAYOUT] ?: "auto",
             swapStartSelect = prefs[Keys.SWAP_START_SELECT] ?: false,
             animationSpeed = AnimationSpeed.fromString(prefs[Keys.ANIMATION_SPEED]),
             lastRommSync = prefs[Keys.LAST_ROMM_SYNC]?.let { Instant.parse(it) },
@@ -214,9 +218,21 @@ class UserPreferencesRepository @Inject constructor(
         }
     }
 
-    suspend fun setNintendoButtonLayout(enabled: Boolean) {
+    suspend fun setSwapAB(enabled: Boolean) {
         dataStore.edit { prefs ->
-            prefs[Keys.NINTENDO_BUTTON_LAYOUT] = enabled
+            prefs[Keys.SWAP_AB] = enabled
+        }
+    }
+
+    suspend fun setSwapXY(enabled: Boolean) {
+        dataStore.edit { prefs ->
+            prefs[Keys.SWAP_XY] = enabled
+        }
+    }
+
+    suspend fun setABIconLayout(layout: String) {
+        dataStore.edit { prefs ->
+            prefs[Keys.AB_ICON_LAYOUT] = layout
         }
     }
 
@@ -369,7 +385,9 @@ data class UserPreferences(
     val hapticIntensity: HapticIntensity = HapticIntensity.MEDIUM,
     val soundEnabled: Boolean = false,
     val soundVolume: Int = 40,
-    val nintendoButtonLayout: Boolean = false,
+    val swapAB: Boolean = false,
+    val swapXY: Boolean = false,
+    val abIconLayout: String = "auto",
     val swapStartSelect: Boolean = false,
     val animationSpeed: AnimationSpeed = AnimationSpeed.NORMAL,
     val lastRommSync: Instant? = null,

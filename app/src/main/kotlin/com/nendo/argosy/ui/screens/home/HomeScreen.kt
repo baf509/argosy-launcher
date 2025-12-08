@@ -251,9 +251,9 @@ fun HomeScreen(
                     hints = listOf(
                         InputButton.DPAD_HORIZONTAL to "Game",
                         InputButton.DPAD_VERTICAL to "Platform",
-                        InputButton.A to if (focusedGame.isDownloaded) "Play" else "Download",
-                        InputButton.Y to if (focusedGame.isFavorite) "Unfavorite" else "Favorite",
-                        InputButton.X to "Details"
+                        InputButton.SOUTH to if (focusedGame.isDownloaded) "Play" else "Download",
+                        InputButton.NORTH to if (focusedGame.isFavorite) "Unfavorite" else "Favorite",
+                        InputButton.WEST to "Details"
                     ),
                     modifier = Modifier.padding(top = Dimens.spacingSm)
                 )
@@ -623,7 +623,7 @@ private fun EmptyState(
         )
         if (isRommConfigured) {
             Spacer(modifier = Modifier.height(16.dp))
-            FooterHint(button = InputButton.A, action = "Sync Library")
+            FooterHint(button = InputButton.SOUTH, action = "Sync Library")
         }
     }
 }

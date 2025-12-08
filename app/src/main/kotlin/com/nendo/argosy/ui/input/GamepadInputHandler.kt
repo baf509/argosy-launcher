@@ -35,13 +35,15 @@ class GamepadInputHandler @Inject constructor(
     private val _events = MutableSharedFlow<GamepadEvent>(extraBufferCapacity = 16)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
-    private var nintendoLayout = false
+    private var swapAB = false
+    private var swapXY = false
     private var swapStartSelect = false
 
     init {
         scope.launch {
             preferencesRepository.preferences.collect { prefs ->
-                nintendoLayout = prefs.nintendoButtonLayout
+                swapAB = prefs.swapAB
+                swapXY = prefs.swapXY
                 swapStartSelect = prefs.swapStartSelect
             }
         }
@@ -77,16 +79,16 @@ class GamepadInputHandler @Inject constructor(
         KeyEvent.KEYCODE_DPAD_LEFT -> GamepadEvent.Left
         KeyEvent.KEYCODE_DPAD_RIGHT -> GamepadEvent.Right
 
-        KeyEvent.KEYCODE_BUTTON_A -> if (nintendoLayout) GamepadEvent.Back else GamepadEvent.Confirm
+        KeyEvent.KEYCODE_BUTTON_A -> if (swapAB) GamepadEvent.Back else GamepadEvent.Confirm
         KeyEvent.KEYCODE_ENTER,
         KeyEvent.KEYCODE_DPAD_CENTER -> GamepadEvent.Confirm
 
-        KeyEvent.KEYCODE_BUTTON_B -> if (nintendoLayout) GamepadEvent.Confirm else GamepadEvent.Back
+        KeyEvent.KEYCODE_BUTTON_B -> if (swapAB) GamepadEvent.Confirm else GamepadEvent.Back
         KeyEvent.KEYCODE_ESCAPE,
         KeyEvent.KEYCODE_BACK -> GamepadEvent.Back
 
-        KeyEvent.KEYCODE_BUTTON_X -> if (nintendoLayout) GamepadEvent.SecondaryAction else GamepadEvent.ContextMenu
-        KeyEvent.KEYCODE_BUTTON_Y -> if (nintendoLayout) GamepadEvent.ContextMenu else GamepadEvent.SecondaryAction
+        KeyEvent.KEYCODE_BUTTON_X -> if (swapXY) GamepadEvent.SecondaryAction else GamepadEvent.ContextMenu
+        KeyEvent.KEYCODE_BUTTON_Y -> if (swapXY) GamepadEvent.ContextMenu else GamepadEvent.SecondaryAction
 
         KeyEvent.KEYCODE_BUTTON_L1 -> GamepadEvent.PrevSection
         KeyEvent.KEYCODE_BUTTON_R1 -> GamepadEvent.NextSection

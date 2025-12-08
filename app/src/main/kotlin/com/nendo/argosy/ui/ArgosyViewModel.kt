@@ -6,6 +6,8 @@ import com.nendo.argosy.data.download.DownloadManager
 import com.nendo.argosy.data.preferences.UserPreferencesRepository
 import com.nendo.argosy.data.remote.romm.RomMRepository
 import com.nendo.argosy.data.repository.GameRepository
+import com.nendo.argosy.ui.input.ControllerDetector
+import com.nendo.argosy.ui.input.DetectedIconLayout
 import com.nendo.argosy.ui.input.GamepadInputHandler
 import com.nendo.argosy.ui.input.HapticFeedbackManager
 import com.nendo.argosy.ui.input.InputHandler
@@ -30,7 +32,7 @@ import javax.inject.Inject
 data class ArgosyUiState(
     val isFirstRun: Boolean = true,
     val isLoading: Boolean = true,
-    val nintendoButtonLayout: Boolean = false,
+    val abIconsSwapped: Boolean = false,
     val swapStartSelect: Boolean = false
 )
 
@@ -106,10 +108,11 @@ class ArgosyViewModel @Inject constructor(
 
     val uiState: StateFlow<ArgosyUiState> = preferencesRepository.userPreferences
         .map { prefs ->
+            val abIconsSwapped = computeABIconsSwapped(prefs.abIconLayout)
             ArgosyUiState(
                 isFirstRun = !prefs.firstRunComplete,
                 isLoading = false,
-                nintendoButtonLayout = prefs.nintendoButtonLayout,
+                abIconsSwapped = abIconsSwapped,
                 swapStartSelect = prefs.swapStartSelect
             )
         }
@@ -118,6 +121,17 @@ class ArgosyViewModel @Inject constructor(
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = ArgosyUiState()
         )
+
+    private fun computeABIconsSwapped(abIconLayout: String): Boolean {
+        return when (abIconLayout) {
+            "nintendo" -> true
+            "xbox" -> false
+            else -> {
+                val detected = ControllerDetector.detectFromActiveGamepad()
+                detected == DetectedIconLayout.NINTENDO
+            }
+        }
+    }
 
     val drawerUiState: StateFlow<DrawerState> = combine(
         romMRepository.connectionState,

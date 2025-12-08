@@ -502,7 +502,7 @@ private fun GameDetailContent(
                 hints = listOf(
                     InputButton.DPAD_VERTICAL to "Scroll",
                     InputButton.DPAD_HORIZONTAL to "Change Game",
-                    InputButton.A to when (uiState.downloadStatus) {
+                    InputButton.SOUTH to when (uiState.downloadStatus) {
                         GameDownloadStatus.DOWNLOADED -> "Play"
                         GameDownloadStatus.NOT_DOWNLOADED -> "Download"
                         GameDownloadStatus.QUEUED -> "Queued"
@@ -510,8 +510,8 @@ private fun GameDetailContent(
                         GameDownloadStatus.DOWNLOADING -> "Downloading"
                         GameDownloadStatus.PAUSED -> "Paused"
                     },
-                    InputButton.B to "Back",
-                    InputButton.Y to if (uiState.game?.isFavorite == true) "Unfavorite" else "Favorite"
+                    InputButton.EAST to "Back",
+                    InputButton.NORTH to if (uiState.game?.isFavorite == true) "Unfavorite" else "Favorite"
                 )
             )
         }
@@ -679,8 +679,8 @@ private fun RatingPickerOverlay(
             FooterBar(
                 hints = listOf(
                     InputButton.DPAD_HORIZONTAL to "Adjust",
-                    InputButton.A to "Confirm",
-                    InputButton.B to "Cancel"
+                    InputButton.SOUTH to "Confirm",
+                    InputButton.EAST to "Cancel"
                 )
             )
         }

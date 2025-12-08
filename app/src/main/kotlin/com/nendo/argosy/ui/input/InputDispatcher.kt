@@ -128,6 +128,6 @@ val LocalInputDispatcher = staticCompositionLocalOf<InputDispatcher> {
     error("No InputDispatcher provided")
 }
 
-val LocalNintendoLayout = staticCompositionLocalOf { false }
+val LocalABIconsSwapped = staticCompositionLocalOf { false }
 
 val LocalSwapStartSelect = staticCompositionLocalOf { false }
