@@ -131,9 +131,18 @@ fun SettingsScreen(
         viewModel.createInputHandler(onBack = onBack)
     }
 
-    DisposableEffect(inputHandler) {
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, inputHandler) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                inputDispatcher.subscribeView(inputHandler)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
         inputDispatcher.subscribeView(inputHandler)
-        onDispose { }
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
     }
 
     LaunchedEffect(uiState.launchFolderPicker) {
@@ -156,7 +165,6 @@ fun SettingsScreen(
         }
     }
 
-    val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {

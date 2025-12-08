@@ -55,6 +55,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
@@ -122,9 +125,18 @@ fun GameDetailScreen(
         )
     }
 
-    DisposableEffect(inputHandler) {
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, inputHandler) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                inputDispatcher.subscribeView(inputHandler)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
         inputDispatcher.subscribeView(inputHandler)
-        onDispose { }
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
     }
 
     Box(modifier = Modifier.fillMaxSize()) {

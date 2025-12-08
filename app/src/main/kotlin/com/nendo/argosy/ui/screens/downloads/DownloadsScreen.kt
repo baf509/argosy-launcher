@@ -38,6 +38,9 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -64,9 +67,18 @@ fun DownloadsScreen(
         viewModel.createInputHandler(onBack = onBack)
     }
 
-    DisposableEffect(inputHandler) {
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, inputHandler) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                inputDispatcher.subscribeView(inputHandler)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
         inputDispatcher.subscribeView(inputHandler)
-        onDispose { }
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
     }
 
     val uiState by viewModel.uiState.collectAsState()
