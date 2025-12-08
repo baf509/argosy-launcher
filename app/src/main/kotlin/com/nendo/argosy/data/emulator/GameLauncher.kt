@@ -65,6 +65,10 @@ class GameLauncher @Inject constructor(
             return EmulatorRegistry.getByPackage(platformDefault.packageName)
         }
 
+        if (emulatorDetector.installedEmulators.value.isEmpty()) {
+            emulatorDetector.detectEmulators()
+        }
+
         return emulatorDetector.getPreferredEmulator(game.platformId)?.def
     }
 
