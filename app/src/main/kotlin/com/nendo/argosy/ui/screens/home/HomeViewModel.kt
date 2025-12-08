@@ -1,5 +1,6 @@
 package com.nendo.argosy.ui.screens.home
 
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.nendo.argosy.data.download.DownloadManager
@@ -49,6 +50,14 @@ private const val RECENT_GAMES_LIMIT = 10
 private const val AUTO_SYNC_DAYS = 7L
 private const val MENU_INDEX_MAX_DOWNLOADED = 4
 private const val MENU_INDEX_MAX_REMOTE = 3
+
+private const val KEY_ROW_TYPE = "home_row_type"
+private const val KEY_PLATFORM_INDEX = "home_platform_index"
+private const val KEY_GAME_INDEX = "home_game_index"
+
+private const val ROW_TYPE_FAVORITES = "favorites"
+private const val ROW_TYPE_PLATFORM = "platform"
+private const val ROW_TYPE_CONTINUE = "continue"
 
 data class GameDownloadIndicator(
     val isDownloading: Boolean = false,
@@ -155,6 +164,7 @@ sealed class HomeEvent {
 
 @HiltViewModel
 class HomeViewModel @Inject constructor(
+    private val savedStateHandle: SavedStateHandle,
     private val platformDao: PlatformDao,
     private val gameDao: GameDao,
     private val romMRepository: RomMRepository,
@@ -168,7 +178,7 @@ class HomeViewModel @Inject constructor(
     private val gameActions: GameActionsDelegate
 ) : ViewModel() {
 
-    private val _uiState = MutableStateFlow(HomeUiState())
+    private val _uiState = MutableStateFlow(restoreInitialState())
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
 
     private val _events = MutableSharedFlow<HomeEvent>()
@@ -180,6 +190,33 @@ class HomeViewModel @Inject constructor(
     init {
         loadData()
         initializeRomM()
+    }
+
+    private fun restoreInitialState(): HomeUiState {
+        val rowType = savedStateHandle.get<String>(KEY_ROW_TYPE)
+        val platformIndex = savedStateHandle.get<Int>(KEY_PLATFORM_INDEX) ?: 0
+        val gameIndex = savedStateHandle.get<Int>(KEY_GAME_INDEX) ?: 0
+
+        val currentRow = when (rowType) {
+            ROW_TYPE_FAVORITES -> HomeRow.Favorites
+            ROW_TYPE_PLATFORM -> HomeRow.Platform(platformIndex)
+            ROW_TYPE_CONTINUE -> HomeRow.Continue
+            else -> HomeRow.Continue
+        }
+
+        return HomeUiState(currentRow = currentRow, focusedGameIndex = gameIndex)
+    }
+
+    private fun saveCurrentState() {
+        val state = _uiState.value
+        val (rowType, platformIndex) = when (val row = state.currentRow) {
+            HomeRow.Favorites -> ROW_TYPE_FAVORITES to 0
+            is HomeRow.Platform -> ROW_TYPE_PLATFORM to row.index
+            HomeRow.Continue -> ROW_TYPE_CONTINUE to 0
+        }
+        savedStateHandle[KEY_ROW_TYPE] = rowType
+        savedStateHandle[KEY_PLATFORM_INDEX] = platformIndex
+        savedStateHandle[KEY_GAME_INDEX] = state.focusedGameIndex
     }
 
     private fun initializeRomM() {
@@ -285,8 +322,17 @@ class HomeViewModel @Inject constructor(
                     currentRow = if (shouldSwitchRow) HomeRow.Platform(0) else state.currentRow
                 )
             }
-            if (platforms.isNotEmpty() && _uiState.value.platformItems.isEmpty()) {
-                loadGamesForPlatform(platforms.first().id, platformIndex = 0, setLoadingFalse = true)
+            val state = _uiState.value
+            if (platforms.isNotEmpty() && state.platformItems.isEmpty()) {
+                val currentRow = state.currentRow
+                if (currentRow is HomeRow.Platform) {
+                    val platform = platforms.getOrNull(currentRow.index)
+                    if (platform != null) {
+                        loadGamesForPlatform(platform.id, currentRow.index, setLoadingFalse = true)
+                    }
+                } else {
+                    loadGamesForPlatform(platforms.first().id, platformIndex = 0, setLoadingFalse = true)
+                }
             }
         }
     }
@@ -365,6 +411,7 @@ class HomeViewModel @Inject constructor(
         } else {
             _uiState.update { it.copy(currentRow = nextRow, focusedGameIndex = savedIndex) }
         }
+        saveCurrentState()
     }
 
     fun previousRow() {
@@ -388,6 +435,7 @@ class HomeViewModel @Inject constructor(
         } else {
             _uiState.update { it.copy(currentRow = prevRow, focusedGameIndex = savedIndex) }
         }
+        saveCurrentState()
     }
 
     fun nextGame(): Boolean {
@@ -395,6 +443,7 @@ class HomeViewModel @Inject constructor(
         if (state.currentItems.isEmpty()) return false
         if (state.focusedGameIndex >= state.currentItems.size - 1) return false
         _uiState.update { it.copy(focusedGameIndex = state.focusedGameIndex + 1) }
+        saveCurrentState()
         return true
     }
 
@@ -403,6 +452,7 @@ class HomeViewModel @Inject constructor(
         if (state.currentItems.isEmpty()) return false
         if (state.focusedGameIndex <= 0) return false
         _uiState.update { it.copy(focusedGameIndex = state.focusedGameIndex - 1) }
+        saveCurrentState()
         return true
     }
 
@@ -513,6 +563,7 @@ class HomeViewModel @Inject constructor(
     }
 
     fun launchGame(gameId: Long) {
+        saveCurrentState()
         viewModelScope.launch {
             when (val result = launchGameUseCase(gameId)) {
                 is LaunchResult.Success -> {
