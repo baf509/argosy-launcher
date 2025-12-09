@@ -12,6 +12,7 @@ import javax.inject.Singleton
 private const val TAG = "SoundFeedback"
 
 enum class SoundType {
+    SILENT,
     NAVIGATE,
     BOUNDARY,
     SECTION_CHANGE,
@@ -173,6 +174,7 @@ class SoundFeedbackManager @Inject constructor(
 
     fun play(type: SoundType) {
         if (!enabled) return
+        if (type == SoundType.SILENT) return
 
         val config = soundConfigs[type]
         when {

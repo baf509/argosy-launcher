@@ -7,6 +7,7 @@ import com.nendo.argosy.data.local.dao.PlatformDao
 import com.nendo.argosy.data.local.entity.GameEntity
 import com.nendo.argosy.ui.input.InputHandler
 import com.nendo.argosy.ui.input.InputResult
+import com.nendo.argosy.ui.navigation.GameNavigationContext
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -39,7 +40,8 @@ data class SearchUiState(
 @HiltViewModel
 class SearchViewModel @Inject constructor(
     private val gameDao: GameDao,
-    private val platformDao: PlatformDao
+    private val platformDao: PlatformDao,
+    private val gameNavigationContext: GameNavigationContext
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SearchUiState())
@@ -135,7 +137,10 @@ class SearchViewModel @Inject constructor(
         override fun onRight(): InputResult = InputResult.UNHANDLED
 
         override fun onConfirm(): InputResult {
-            getSelectedGameId()?.let { onGameSelect(it) }
+            getSelectedGameId()?.let { gameId ->
+                gameNavigationContext.setContext(_uiState.value.results.map { it.id })
+                onGameSelect(gameId)
+            }
             return InputResult.HANDLED
         }
 

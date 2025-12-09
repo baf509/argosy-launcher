@@ -172,15 +172,20 @@ private fun GameDetailContent(
     Box(modifier = Modifier.fillMaxSize()) {
         Box(modifier = Modifier.fillMaxSize().blur(modalBlur)) {
             if (game.backgroundPath != null) {
-            AsyncImage(
-                model = game.backgroundPath,
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .blur(24.dp)
-            )
-        }
+                val imageData = if (game.backgroundPath.startsWith("/")) {
+                    java.io.File(game.backgroundPath)
+                } else {
+                    game.backgroundPath
+                }
+                AsyncImage(
+                    model = imageData,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .blur(24.dp)
+                )
+            }
 
         Box(
             modifier = Modifier

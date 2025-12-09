@@ -66,6 +66,8 @@ object PlatformDefinitions {
         PlatformDef("vectrex", "Vectrex", "Vectrex", setOf("vec"), 110),
         PlatformDef("coleco", "ColecoVision", "Coleco", setOf("col"), 111),
         PlatformDef("intellivision", "Intellivision", "Intv", setOf("int", "bin"), 112),
+
+        PlatformDef("steam", "Steam", "Steam", emptySet(), 130),
     )
 
     private val platformMap = platforms.associateBy { it.id }

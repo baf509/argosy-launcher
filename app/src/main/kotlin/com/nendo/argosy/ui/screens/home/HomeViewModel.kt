@@ -10,6 +10,7 @@ import com.nendo.argosy.data.local.dao.GameDao
 import com.nendo.argosy.data.local.dao.PlatformDao
 import com.nendo.argosy.data.local.entity.GameEntity
 import com.nendo.argosy.data.local.entity.PlatformEntity
+import com.nendo.argosy.data.model.GameSource
 import com.nendo.argosy.data.preferences.UserPreferencesRepository
 import com.nendo.argosy.data.remote.romm.RomMRepository
 import com.nendo.argosy.domain.usecase.download.DownloadGameUseCase
@@ -576,6 +577,9 @@ class HomeViewModel @Inject constructor(
                 is LaunchResult.NoRomFile -> {
                     notificationManager.showError("ROM file not found")
                 }
+                is LaunchResult.NoSteamLauncher -> {
+                    notificationManager.showError("Steam launcher not installed")
+                }
                 is LaunchResult.Error -> {
                     notificationManager.showError(result.message)
                 }
@@ -611,16 +615,17 @@ class HomeViewModel @Inject constructor(
 
     private fun GameEntity.toUi(): HomeGameUi {
         val firstScreenshot = screenshotPaths?.split(",")?.firstOrNull()?.takeIf { it.isNotBlank() }
+        val effectiveBackground = backgroundPath ?: firstScreenshot ?: coverPath
         return HomeGameUi(
             id = id,
             title = title,
             coverPath = coverPath,
-            backgroundPath = backgroundPath ?: firstScreenshot ?: coverPath,
+            backgroundPath = effectiveBackground,
             developer = developer,
             releaseYear = releaseYear,
             genre = genre,
             isFavorite = isFavorite,
-            isDownloaded = localPath != null,
+            isDownloaded = localPath != null || source == GameSource.STEAM,
             rating = rating,
             userRating = userRating,
             userDifficulty = userDifficulty
@@ -715,7 +720,11 @@ class HomeViewModel @Inject constructor(
         }
 
         override fun onContextMenu(): InputResult {
-            val game = _uiState.value.focusedGame ?: return InputResult.UNHANDLED
+            val state = _uiState.value
+            val game = state.focusedGame ?: return InputResult.UNHANDLED
+            gameNavigationContext.setContext(
+                state.currentItems.filterIsInstance<HomeRowItem.Game>().map { it.game.id }
+            )
             onGameSelect(game.id)
             return InputResult.HANDLED
         }

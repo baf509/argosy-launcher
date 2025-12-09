@@ -116,6 +116,7 @@ data class LibraryGameUi(
             GameSource.LOCAL_ONLY -> Icons.Default.Folder
             GameSource.ROMM_SYNCED -> Icons.Default.CheckCircle
             GameSource.ROMM_REMOTE -> null
+            GameSource.STEAM -> Icons.Default.Cloud
         }
 }
 
@@ -330,7 +331,6 @@ class LibraryViewModel @Inject constructor(
                 }
 
                 Log.d(TAG, "loadGames: ${games.size} total, ${filteredGames.size} after filters")
-                gameNavigationContext.setContext(filteredGames.map { it.id })
                 _uiState.update { uiState ->
                     val shouldResetFocus = uiState.games.isEmpty()
                     uiState.copy(
@@ -552,6 +552,7 @@ class LibraryViewModel @Inject constructor(
                 InputResult.handled(sound)
             }
             2 -> {
+                gameNavigationContext.setContext(_uiState.value.games.map { it.id })
                 onGameSelect(game.id)
                 toggleQuickMenu()
                 InputResult.HANDLED
@@ -600,6 +601,9 @@ class LibraryViewModel @Inject constructor(
                 is LaunchResult.NoRomFile -> {
                     notificationManager.showError("ROM file not found")
                 }
+                is LaunchResult.NoSteamLauncher -> {
+                    notificationManager.showError("Steam launcher not installed")
+                }
                 is LaunchResult.Error -> {
                     notificationManager.showError(result.message)
                 }
@@ -636,7 +640,7 @@ class LibraryViewModel @Inject constructor(
         coverPath = coverPath,
         source = source,
         isFavorite = isFavorite,
-        isDownloaded = localPath != null,
+        isDownloaded = localPath != null || source == GameSource.STEAM,
         emulatorName = null
     )
 

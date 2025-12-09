@@ -168,9 +168,14 @@ fun HomeScreen(
             label = "background"
         ) { backgroundPath ->
             if (backgroundPath != null) {
+                val imageData = if (backgroundPath.startsWith("/")) {
+                    java.io.File(backgroundPath)
+                } else {
+                    backgroundPath
+                }
                 AsyncImage(
                     model = ImageRequest.Builder(LocalContext.current)
-                        .data(backgroundPath)
+                        .data(imageData)
                         .size(640, 360)
                         .crossfade(300)
                         .build(),

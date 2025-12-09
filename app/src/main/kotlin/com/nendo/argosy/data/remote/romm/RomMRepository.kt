@@ -558,9 +558,11 @@ class RomMRepository @Inject constructor(
 
     suspend fun updateUserRating(gameId: Long, rating: Int): RomMResult<Unit> {
         val game = gameDao.getById(gameId) ?: return RomMResult.Error("Game not found")
-        val rommId = game.rommId ?: return RomMResult.Error("Not a RomM game")
 
         gameDao.updateUserRating(gameId, rating)
+
+        val rommId = game.rommId ?: return RomMResult.Success(Unit)
+
         pendingSyncDao.deleteByGameAndType(gameId, "RATING")
 
         val currentApi = api
@@ -583,9 +585,11 @@ class RomMRepository @Inject constructor(
 
     suspend fun updateUserDifficulty(gameId: Long, difficulty: Int): RomMResult<Unit> {
         val game = gameDao.getById(gameId) ?: return RomMResult.Error("Game not found")
-        val rommId = game.rommId ?: return RomMResult.Error("Not a RomM game")
 
         gameDao.updateUserDifficulty(gameId, difficulty)
+
+        val rommId = game.rommId ?: return RomMResult.Success(Unit)
+
         pendingSyncDao.deleteByGameAndType(gameId, "DIFFICULTY")
 
         val currentApi = api

@@ -24,9 +24,10 @@ private const val TAG = "ImageCacheManager"
 
 data class ImageCacheRequest(
     val url: String,
-    val rommId: Long,
+    val id: Long,
     val type: ImageType,
-    val gameTitle: String = ""
+    val gameTitle: String = "",
+    val isSteam: Boolean = false
 )
 
 enum class ImageType { BACKGROUND, SCREENSHOT, COVER }
@@ -86,7 +87,14 @@ class ImageCacheManager @Inject constructor(
 
     fun queueBackgroundCache(url: String, rommId: Long, gameTitle: String = "") {
         scope.launch {
-            queue.send(ImageCacheRequest(url, rommId, ImageType.BACKGROUND, gameTitle))
+            queue.send(ImageCacheRequest(url, rommId, ImageType.BACKGROUND, gameTitle, isSteam = false))
+            startProcessingIfNeeded()
+        }
+    }
+
+    fun queueSteamBackgroundCache(url: String, steamAppId: Long, gameTitle: String = "") {
+        scope.launch {
+            queue.send(ImageCacheRequest(url, steamAppId, ImageType.BACKGROUND, gameTitle, isSteam = true))
             startProcessingIfNeeded()
         }
     }
@@ -108,7 +116,7 @@ class ImageCacheManager @Inject constructor(
                     processRequest(request)
                     updateProgressFromDb(isProcessing = true)
                 } catch (e: Exception) {
-                    Log.e(TAG, "Failed to process ${request.rommId}: ${e.message}")
+                    Log.e(TAG, "Failed to process ${request.id}: ${e.message}")
                 }
 
                 if (queue.isEmpty) {
@@ -131,11 +139,12 @@ class ImageCacheManager @Inject constructor(
     }
 
     private suspend fun processRequest(request: ImageCacheRequest) {
-        val fileName = "bg_${request.rommId}_${request.url.md5Hash()}.jpg"
+        val prefix = if (request.isSteam) "steam_bg" else "bg"
+        val fileName = "${prefix}_${request.id}_${request.url.md5Hash()}.jpg"
         val cachedFile = File(cacheDir, fileName)
 
         if (cachedFile.exists()) {
-            updateGameBackground(request.rommId, cachedFile.absolutePath)
+            updateGameBackground(request.id, cachedFile.absolutePath, request.isSteam)
             return
         }
 
@@ -146,12 +155,17 @@ class ImageCacheManager @Inject constructor(
         }
         bitmap.recycle()
 
-        Log.d(TAG, "Cached background for rommId ${request.rommId}: ${cachedFile.length() / 1024}KB")
-        updateGameBackground(request.rommId, cachedFile.absolutePath)
+        val idLabel = if (request.isSteam) "steamAppId" else "rommId"
+        Log.d(TAG, "Cached background for $idLabel ${request.id}: ${cachedFile.length() / 1024}KB")
+        updateGameBackground(request.id, cachedFile.absolutePath, request.isSteam)
     }
 
-    private suspend fun updateGameBackground(rommId: Long, localPath: String) {
-        val game = gameDao.getByRommId(rommId) ?: return
+    private suspend fun updateGameBackground(id: Long, localPath: String, isSteam: Boolean) {
+        val game = if (isSteam) {
+            gameDao.getBySteamAppId(id)
+        } else {
+            gameDao.getByRommId(id)
+        } ?: return
         if (game.backgroundPath?.startsWith("/") == true) return
         gameDao.updateBackgroundPath(game.id, localPath)
     }
@@ -228,8 +242,10 @@ class ImageCacheManager @Inject constructor(
             Log.d(TAG, "Resuming cache for ${uncached.size} games with uncached backgrounds")
             uncached.forEach { game ->
                 val url = game.backgroundPath ?: return@forEach
-                val rommId = game.rommId ?: return@forEach
-                queueBackgroundCache(url, rommId, game.title)
+                when {
+                    game.steamAppId != null -> queueSteamBackgroundCache(url, game.steamAppId, game.title)
+                    game.rommId != null -> queueBackgroundCache(url, game.rommId, game.title)
+                }
             }
         }
     }
@@ -426,7 +442,7 @@ class ImageCacheManager @Inject constructor(
 
     fun queueCoverCache(url: String, rommId: Long, gameTitle: String = "") {
         scope.launch {
-            coverQueue.send(ImageCacheRequest(url, rommId, ImageType.COVER, gameTitle))
+            coverQueue.send(ImageCacheRequest(url, rommId, ImageType.COVER, gameTitle, isSteam = false))
             startCoverProcessingIfNeeded()
         }
     }
@@ -446,7 +462,7 @@ class ImageCacheManager @Inject constructor(
                     )
                     processCoverRequest(request)
                 } catch (e: Exception) {
-                    Log.e(TAG, "Failed to process cover for ${request.rommId}: ${e.message}")
+                    Log.e(TAG, "Failed to process cover for ${request.id}: ${e.message}")
                 }
 
                 if (coverQueue.isEmpty) break
@@ -456,11 +472,11 @@ class ImageCacheManager @Inject constructor(
     }
 
     private suspend fun processCoverRequest(request: ImageCacheRequest) {
-        val fileName = "cover_${request.rommId}_${request.url.md5Hash()}.jpg"
+        val fileName = "cover_${request.id}_${request.url.md5Hash()}.jpg"
         val cachedFile = File(cacheDir, fileName)
 
         if (cachedFile.exists()) {
-            updateGameCover(request.rommId, cachedFile.absolutePath)
+            updateGameCover(request.id, cachedFile.absolutePath)
             return
         }
 
@@ -471,8 +487,8 @@ class ImageCacheManager @Inject constructor(
         }
         bitmap.recycle()
 
-        Log.d(TAG, "Cached cover for rommId ${request.rommId}: ${cachedFile.length() / 1024}KB")
-        updateGameCover(request.rommId, cachedFile.absolutePath)
+        Log.d(TAG, "Cached cover for rommId ${request.id}: ${cachedFile.length() / 1024}KB")
+        updateGameCover(request.id, cachedFile.absolutePath)
     }
 
     private suspend fun updateGameCover(rommId: Long, localPath: String) {

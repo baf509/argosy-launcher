@@ -6,9 +6,11 @@ import android.content.Intent
 import android.net.Uri
 import android.util.Log
 import androidx.core.content.FileProvider
+import com.nendo.argosy.data.launcher.SteamLaunchers
 import com.nendo.argosy.data.local.dao.EmulatorConfigDao
 import com.nendo.argosy.data.local.dao.GameDao
 import com.nendo.argosy.data.local.entity.GameEntity
+import com.nendo.argosy.data.model.GameSource
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import java.time.Instant
@@ -21,6 +23,7 @@ sealed class LaunchResult {
     data class Success(val intent: Intent) : LaunchResult()
     data class NoEmulator(val platformId: String) : LaunchResult()
     data class NoRomFile(val gamePath: String?) : LaunchResult()
+    data class NoSteamLauncher(val launcherPackage: String) : LaunchResult()
     data class Error(val message: String) : LaunchResult()
 }
 
@@ -34,6 +37,10 @@ class GameLauncher @Inject constructor(
     suspend fun launch(gameId: Long): LaunchResult {
         val game = gameDao.getById(gameId)
             ?: return LaunchResult.Error("Game not found")
+
+        if (game.source == GameSource.STEAM) {
+            return launchSteamGame(game)
+        }
 
         val romPath = game.localPath
             ?: return LaunchResult.NoRomFile(null)
@@ -51,6 +58,29 @@ class GameLauncher @Inject constructor(
 
         gameDao.recordPlayStart(gameId, Instant.now())
 
+        return LaunchResult.Success(intent)
+    }
+
+    private suspend fun launchSteamGame(game: GameEntity): LaunchResult {
+        val steamAppId = game.steamAppId
+            ?: return LaunchResult.Error("Steam game missing app ID")
+
+        val launcherPackage = game.steamLauncher
+            ?: return LaunchResult.Error("Steam game missing launcher")
+
+        val launcher = SteamLaunchers.getByPackage(launcherPackage)
+            ?: return LaunchResult.NoSteamLauncher(launcherPackage)
+
+        if (!launcher.isInstalled(context)) {
+            return LaunchResult.NoSteamLauncher(launcherPackage)
+        }
+
+        val intent = launcher.createLaunchIntent(steamAppId)
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+
+        gameDao.recordPlayStart(game.id, Instant.now())
+
+        Log.d(TAG, "Launching Steam game ${game.title} via ${launcher.displayName}")
         return LaunchResult.Success(intent)
     }
 

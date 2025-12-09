@@ -1,5 +1,8 @@
 package com.nendo.argosy.ui.screens.settings
 
+import android.content.Context
+import android.os.Build
+import android.os.Environment
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -34,7 +37,11 @@ import com.nendo.argosy.domain.usecase.MigrateStorageUseCase
 import com.nendo.argosy.domain.usecase.game.ConfigureEmulatorUseCase
 import com.nendo.argosy.domain.usecase.sync.SyncLibraryResult
 import com.nendo.argosy.domain.usecase.sync.SyncLibraryUseCase
+import com.nendo.argosy.data.launcher.GameHubLogScanner
+import com.nendo.argosy.data.launcher.SteamLaunchers
 import com.nendo.argosy.data.repository.GameRepository
+import com.nendo.argosy.data.repository.SteamRepository
+import com.nendo.argosy.data.repository.SteamResult
 import com.nendo.argosy.ui.input.ControllerDetector
 import com.nendo.argosy.ui.input.DetectedIconLayout
 import com.nendo.argosy.ui.input.HapticFeedbackManager
@@ -48,6 +55,7 @@ import com.nendo.argosy.ui.input.SoundType
 import com.nendo.argosy.ui.notification.NotificationManager
 import com.nendo.argosy.ui.notification.showError
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -65,6 +73,7 @@ enum class SettingsSection {
     MAIN,
     SERVER,
     SYNC_SETTINGS,
+    STEAM_SETTINGS,
     STORAGE,
     DISPLAY,
     CONTROLS,
@@ -177,6 +186,26 @@ data class SyncSettingsState(
     val totalPlatforms: Int = 0
 )
 
+data class InstalledSteamLauncher(
+    val packageName: String,
+    val displayName: String,
+    val gameCount: Int = 0,
+    val supportsScanning: Boolean = false
+)
+
+data class SteamSettingsState(
+    val hasStoragePermission: Boolean = false,
+    val installedLaunchers: List<InstalledSteamLauncher> = emptyList(),
+    val isSyncing: Boolean = false,
+    val syncingLauncher: String? = null,
+    val showAddGameDialog: Boolean = false,
+    val addGameAppId: String = "",
+    val addGameError: String? = null,
+    val isAddingGame: Boolean = false,
+    val selectedLauncherPackage: String? = null,
+    val launcherActionIndex: Int = 0
+)
+
 data class UpdateCheckState(
     val isChecking: Boolean = false,
     val hasChecked: Boolean = false,
@@ -200,6 +229,7 @@ data class SettingsUiState(
     val server: ServerState = ServerState(),
     val storage: StorageState = StorageState(),
     val syncSettings: SyncSettingsState = SyncSettingsState(),
+    val steam: SteamSettingsState = SteamSettingsState(),
     val launchFolderPicker: Boolean = false,
     val showMigrationDialog: Boolean = false,
     val pendingStoragePath: String? = null,
@@ -211,6 +241,7 @@ data class SettingsUiState(
 
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val preferencesRepository: UserPreferencesRepository,
     private val platformDao: PlatformDao,
     private val emulatorConfigDao: EmulatorConfigDao,
@@ -218,6 +249,7 @@ class SettingsViewModel @Inject constructor(
     private val romMRepository: RomMRepository,
     private val notificationManager: NotificationManager,
     private val gameRepository: GameRepository,
+    private val steamRepository: SteamRepository,
     private val imageCacheManager: ImageCacheManager,
     private val syncLibraryUseCase: SyncLibraryUseCase,
     private val configureEmulatorUseCase: ConfigureEmulatorUseCase,
@@ -236,6 +268,9 @@ class SettingsViewModel @Inject constructor(
 
     private val _downloadUpdateEvent = MutableSharedFlow<Unit>()
     val downloadUpdateEvent: SharedFlow<Unit> = _downloadUpdateEvent.asSharedFlow()
+
+    private val _requestStoragePermissionEvent = MutableSharedFlow<Unit>()
+    val requestStoragePermissionEvent: SharedFlow<Unit> = _requestStoragePermissionEvent.asSharedFlow()
 
     val imageCacheProgress: StateFlow<ImageCacheProgress> = imageCacheManager.progress
 
@@ -454,6 +489,7 @@ class SettingsViewModel @Inject constructor(
             SettingsSection.EMULATORS -> refreshEmulators()
             SettingsSection.SERVER -> checkRommConnection()
             SettingsSection.SYNC_SETTINGS -> loadLibrarySettings()
+            SettingsSection.STEAM_SETTINGS -> loadSteamSettings()
             else -> {}
         }
     }
@@ -462,6 +498,217 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             val prefs = preferencesRepository.preferences.first()
             _uiState.update { it.copy(syncSettings = it.syncSettings.copy(syncFilters = prefs.syncFilters)) }
+        }
+    }
+
+    private fun loadSteamSettings() {
+        viewModelScope.launch {
+            val hasPermission = checkStoragePermission()
+            val installedLaunchers = SteamLaunchers.getInstalled(context).map { launcher ->
+                InstalledSteamLauncher(
+                    packageName = launcher.packageName,
+                    displayName = launcher.displayName,
+                    gameCount = 0,
+                    supportsScanning = launcher.supportsScanning
+                )
+            }
+
+            _uiState.update {
+                it.copy(
+                    steam = it.steam.copy(
+                        hasStoragePermission = hasPermission,
+                        installedLaunchers = installedLaunchers,
+                        launcherActionIndex = 0
+                    )
+                )
+            }
+        }
+    }
+
+    fun refreshSteamSettings() {
+        loadSteamSettings()
+    }
+
+    fun moveLauncherActionFocus(delta: Int) {
+        val state = _uiState.value
+        val launcherIndex = state.focusedIndex - 1
+        if (launcherIndex < 0 || launcherIndex >= state.steam.installedLaunchers.size) return
+
+        val launcher = state.steam.installedLaunchers[launcherIndex]
+        val maxIndex = if (launcher.supportsScanning) 1 else 0
+        val newIndex = (state.steam.launcherActionIndex + delta).coerceIn(0, maxIndex)
+
+        _uiState.update { it.copy(steam = it.steam.copy(launcherActionIndex = newIndex)) }
+    }
+
+    fun confirmLauncherAction() {
+        val state = _uiState.value
+        val launcherIndex = state.focusedIndex - 1
+        if (launcherIndex < 0 || launcherIndex >= state.steam.installedLaunchers.size) return
+
+        val launcher = state.steam.installedLaunchers[launcherIndex]
+
+        if (launcher.supportsScanning && state.steam.launcherActionIndex == 0) {
+            scanSteamLauncher(launcher.packageName)
+        } else {
+            showAddSteamGameDialog(launcher.packageName)
+        }
+    }
+
+    fun scanSteamLauncher(packageName: String) {
+        val launcher = _uiState.value.steam.installedLaunchers.find { it.packageName == packageName }
+        if (launcher == null) return
+
+        val steamLauncher = SteamLaunchers.getByPackage(packageName)
+
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(steam = it.steam.copy(isSyncing = true, syncingLauncher = packageName))
+            }
+
+            notificationManager.show("Scanning ${launcher.displayName}...")
+
+            val scannedGames = if (steamLauncher?.supportsScanning == true) {
+                withContext(Dispatchers.IO) {
+                    GameHubLogScanner.scan(packageName)
+                }
+            } else {
+                emptyList()
+            }
+
+            if (scannedGames.isEmpty()) {
+                _uiState.update {
+                    it.copy(steam = it.steam.copy(isSyncing = false, syncingLauncher = null))
+                }
+                notificationManager.show("No games found")
+                return@launch
+            }
+
+            var addedCount = 0
+            var skippedCount = 0
+
+            for (game in scannedGames) {
+                when (steamRepository.addGame(game.appId, packageName)) {
+                    is SteamResult.Success -> addedCount++
+                    is SteamResult.Error -> skippedCount++
+                }
+            }
+
+            _uiState.update {
+                it.copy(steam = it.steam.copy(isSyncing = false, syncingLauncher = null))
+            }
+
+            val message = when {
+                addedCount > 0 && skippedCount > 0 -> "Added $addedCount games, $skippedCount already existed"
+                addedCount > 0 -> "Added $addedCount games"
+                else -> "All ${scannedGames.size} games already in library"
+            }
+            notificationManager.show(message)
+            loadSteamSettings()
+        }
+    }
+
+    fun refreshSteamMetadata() {
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(steam = it.steam.copy(isSyncing = true, syncingLauncher = "refresh"))
+            }
+
+            when (val result = steamRepository.refreshAllMetadata()) {
+                is SteamResult.Success -> {
+                    notificationManager.show("Refreshed metadata for ${result.data} games")
+                }
+                is SteamResult.Error -> {
+                    notificationManager.showError("Failed to refresh: ${result.message}")
+                }
+            }
+
+            _uiState.update {
+                it.copy(steam = it.steam.copy(isSyncing = false, syncingLauncher = null))
+            }
+            loadSteamSettings()
+        }
+    }
+
+    fun showAddSteamGameDialog(launcherPackage: String? = null) {
+        _uiState.update {
+            it.copy(steam = it.steam.copy(
+                showAddGameDialog = true,
+                addGameAppId = "",
+                addGameError = null,
+                isAddingGame = false,
+                selectedLauncherPackage = launcherPackage
+            ))
+        }
+    }
+
+    fun dismissAddSteamGameDialog() {
+        _uiState.update {
+            it.copy(steam = it.steam.copy(
+                showAddGameDialog = false,
+                addGameAppId = "",
+                addGameError = null,
+                isAddingGame = false,
+                selectedLauncherPackage = null
+            ))
+        }
+    }
+
+    fun setAddGameAppId(appId: String) {
+        _uiState.update {
+            it.copy(steam = it.steam.copy(addGameAppId = appId, addGameError = null))
+        }
+    }
+
+    fun confirmAddSteamGame() {
+        val steamState = _uiState.value.steam
+        val appIdStr = steamState.addGameAppId.trim()
+        val appId = appIdStr.toLongOrNull()
+
+        if (appId == null || appId <= 0) {
+            _uiState.update {
+                it.copy(steam = it.steam.copy(addGameError = "Please enter a valid Steam App ID"))
+            }
+            return
+        }
+
+        val launcherPackage = steamState.selectedLauncherPackage
+            ?: SteamLaunchers.getPreferred(context)?.packageName
+        if (launcherPackage == null) {
+            _uiState.update {
+                it.copy(steam = it.steam.copy(addGameError = "No Steam launcher installed"))
+            }
+            return
+        }
+
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(steam = it.steam.copy(isAddingGame = true, addGameError = null))
+            }
+
+            when (val result = steamRepository.addGame(appId, launcherPackage)) {
+                is SteamResult.Success -> {
+                    notificationManager.show("Added: ${result.data.title}")
+                    dismissAddSteamGameDialog()
+                    loadSteamSettings()
+                }
+                is SteamResult.Error -> {
+                    _uiState.update {
+                        it.copy(steam = it.steam.copy(
+                            isAddingGame = false,
+                            addGameError = result.message
+                        ))
+                    }
+                }
+            }
+        }
+    }
+
+    private fun checkStoragePermission(): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            Environment.isExternalStorageManager()
+        } else {
+            true
         }
     }
 
@@ -492,6 +739,10 @@ class SettingsViewModel @Inject constructor(
     fun navigateBack(): Boolean {
         val state = _uiState.value
         return when {
+            state.steam.showAddGameDialog -> {
+                dismissAddSteamGameDialog()
+                true
+            }
             state.sounds.showSoundPicker -> {
                 dismissSoundPicker()
                 true
@@ -510,6 +761,10 @@ class SettingsViewModel @Inject constructor(
             }
             state.currentSection == SettingsSection.SYNC_SETTINGS -> {
                 _uiState.update { it.copy(currentSection = SettingsSection.SERVER, focusedIndex = 1) }
+                true
+            }
+            state.currentSection == SettingsSection.STEAM_SETTINGS -> {
+                _uiState.update { it.copy(currentSection = SettingsSection.SERVER, focusedIndex = 3) }
                 true
             }
             state.currentSection != SettingsSection.MAIN -> {
@@ -541,10 +796,11 @@ class SettingsViewModel @Inject constructor(
                 SettingsSection.SERVER -> when {
                     state.server.rommConfiguring -> 4
                     state.server.connectionStatus == ConnectionStatus.ONLINE ||
-                    state.server.connectionStatus == ConnectionStatus.OFFLINE -> 2
+                    state.server.connectionStatus == ConnectionStatus.OFFLINE -> 3
                     else -> 0
                 }
                 SettingsSection.SYNC_SETTINGS -> 7
+                SettingsSection.STEAM_SETTINGS -> 2 + state.steam.installedLaunchers.size
                 SettingsSection.STORAGE -> 2
                 SettingsSection.DISPLAY -> 3
                 SettingsSection.CONTROLS -> if (state.controls.hapticEnabled) 4 else 3
@@ -554,7 +810,7 @@ class SettingsViewModel @Inject constructor(
                     val autoAssignOffset = if (state.emulators.canAutoAssign) 1 else 0
                     (platformCount + autoAssignOffset - 1).coerceAtLeast(0)
                 }
-                SettingsSection.ABOUT -> 3
+                SettingsSection.ABOUT -> 4
             }
             state.copy(focusedIndex = (state.focusedIndex + delta).coerceIn(0, maxIndex))
         }
@@ -1259,6 +1515,22 @@ class SettingsViewModel @Inject constructor(
                         0 -> startRommConfig()
                         1 -> navigateToSection(SettingsSection.SYNC_SETTINGS)
                         2 -> if (state.server.connectionStatus == ConnectionStatus.ONLINE) syncRomm()
+                        3 -> navigateToSection(SettingsSection.STEAM_SETTINGS)
+                    }
+                }
+                InputResult.HANDLED
+            }
+            SettingsSection.STEAM_SETTINGS -> {
+                val refreshIndex = 1 + state.steam.installedLaunchers.size
+                when {
+                    state.focusedIndex == 0 && !state.steam.hasStoragePermission -> {
+                        viewModelScope.launch { _requestStoragePermissionEvent.emit(Unit) }
+                    }
+                    state.focusedIndex == refreshIndex && !state.steam.isSyncing -> {
+                        refreshSteamMetadata()
+                    }
+                    state.focusedIndex > 0 && state.focusedIndex < refreshIndex && state.steam.hasStoragePermission && !state.steam.isSyncing -> {
+                        confirmLauncherAction()
                     }
                 }
                 InputResult.HANDLED
@@ -1403,6 +1675,13 @@ class SettingsViewModel @Inject constructor(
                 adjustSoundVolume(-1)
                 return InputResult.HANDLED
             }
+            if (state.currentSection == SettingsSection.STEAM_SETTINGS) {
+                val launcherIndex = state.focusedIndex - 1
+                if (launcherIndex >= 0 && launcherIndex < state.steam.installedLaunchers.size) {
+                    moveLauncherActionFocus(-1)
+                    return InputResult.HANDLED
+                }
+            }
             return InputResult.UNHANDLED
         }
 
@@ -1423,6 +1702,13 @@ class SettingsViewModel @Inject constructor(
             if (state.currentSection == SettingsSection.SOUNDS && state.sounds.enabled && state.focusedIndex == 1) {
                 adjustSoundVolume(1)
                 return InputResult.HANDLED
+            }
+            if (state.currentSection == SettingsSection.STEAM_SETTINGS) {
+                val launcherIndex = state.focusedIndex - 1
+                if (launcherIndex >= 0 && launcherIndex < state.steam.installedLaunchers.size) {
+                    moveLauncherActionFocus(1)
+                    return InputResult.HANDLED
+                }
             }
             return InputResult.UNHANDLED
         }

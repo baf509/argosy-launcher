@@ -265,6 +265,7 @@ fun ActionPreference(
     subtitle: String,
     isFocused: Boolean,
     icon: ImageVector? = null,
+    iconTint: Color? = null,
     isDangerous: Boolean = false,
     isEnabled: Boolean = true,
     onClick: () -> Unit
@@ -274,14 +275,15 @@ fun ActionPreference(
         verticalAlignment = Alignment.CenterVertically
     ) {
         if (icon != null) {
+            val defaultTint = when {
+                !isEnabled -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                isFocused -> MaterialTheme.colorScheme.onPrimaryContainer
+                else -> MaterialTheme.colorScheme.onSurfaceVariant
+            }
             Icon(
                 imageVector = icon,
                 contentDescription = null,
-                tint = when {
-                    !isEnabled -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                    isFocused -> MaterialTheme.colorScheme.onPrimaryContainer
-                    else -> MaterialTheme.colorScheme.onSurfaceVariant
-                },
+                tint = iconTint ?: defaultTint,
                 modifier = Modifier.size(Dimens.iconMd)
             )
             Spacer(modifier = Modifier.width(Dimens.spacingMd))

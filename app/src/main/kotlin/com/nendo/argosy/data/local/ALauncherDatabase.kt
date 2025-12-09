@@ -25,7 +25,7 @@ import com.nendo.argosy.data.local.entity.PlatformEntity
         PendingSyncEntity::class,
         DownloadQueueEntity::class
     ],
-    version = 9,
+    version = 10,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -135,6 +135,19 @@ abstract class ALauncherDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE games ADD COLUMN completion INTEGER NOT NULL DEFAULT 0")
                 db.execSQL("ALTER TABLE games ADD COLUMN backlogged INTEGER NOT NULL DEFAULT 0")
                 db.execSQL("ALTER TABLE games ADD COLUMN nowPlaying INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
+        val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE games ADD COLUMN steamAppId INTEGER")
+                db.execSQL("ALTER TABLE games ADD COLUMN steamLauncher TEXT")
+                db.execSQL(
+                    """
+                    CREATE UNIQUE INDEX IF NOT EXISTS index_games_steamAppId
+                    ON games(steamAppId) WHERE steamAppId IS NOT NULL
+                    """
+                )
             }
         }
     }

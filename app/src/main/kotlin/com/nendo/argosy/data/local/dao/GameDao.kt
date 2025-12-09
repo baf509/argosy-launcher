@@ -39,7 +39,7 @@ interface GameDao {
     @Query("""
         SELECT * FROM games
         WHERE isHidden = 0
-        AND (source = 'LOCAL_ONLY' OR source = 'ROMM_SYNCED')
+        AND (source = 'LOCAL_ONLY' OR source = 'ROMM_SYNCED' OR source = 'STEAM')
         ORDER BY sortTitle ASC
     """)
     fun observePlayable(): Flow<List<GameEntity>>
@@ -61,6 +61,9 @@ interface GameDao {
 
     @Query("SELECT * FROM games WHERE igdbId = :igdbId AND platformId = :platformId")
     suspend fun getByIgdbIdAndPlatform(igdbId: Long, platformId: String): GameEntity?
+
+    @Query("SELECT * FROM games WHERE steamAppId = :steamAppId")
+    suspend fun getBySteamAppId(steamAppId: Long): GameEntity?
 
     @Query("SELECT * FROM games WHERE localPath = :path")
     suspend fun getByPath(path: String): GameEntity?
@@ -101,6 +104,9 @@ interface GameDao {
     @Query("SELECT COUNT(*) FROM games WHERE platformId = :platformId AND isHidden = 0")
     suspend fun countByPlatform(platformId: String): Int
 
+    @Query("SELECT * FROM games WHERE platformId = :platformId AND isHidden = 0 ORDER BY sortTitle ASC")
+    suspend fun getByPlatform(platformId: String): List<GameEntity>
+
     @Query("SELECT COUNT(*) FROM games")
     suspend fun countAll(): Int
 
@@ -119,13 +125,13 @@ interface GameDao {
     @Query("UPDATE games SET backgroundPath = :path WHERE id = :gameId")
     suspend fun updateBackgroundPath(gameId: Long, path: String)
 
-    @Query("SELECT * FROM games WHERE backgroundPath LIKE 'http%' AND rommId IS NOT NULL")
+    @Query("SELECT * FROM games WHERE backgroundPath LIKE 'http%' AND (rommId IS NOT NULL OR steamAppId IS NOT NULL)")
     suspend fun getGamesWithUncachedBackgrounds(): List<GameEntity>
 
-    @Query("SELECT COUNT(*) FROM games WHERE backgroundPath IS NOT NULL AND rommId IS NOT NULL")
+    @Query("SELECT COUNT(*) FROM games WHERE backgroundPath IS NOT NULL AND (rommId IS NOT NULL OR steamAppId IS NOT NULL)")
     suspend fun countGamesWithBackgrounds(): Int
 
-    @Query("SELECT COUNT(*) FROM games WHERE backgroundPath LIKE '/%' AND rommId IS NOT NULL")
+    @Query("SELECT COUNT(*) FROM games WHERE backgroundPath LIKE '/%' AND (rommId IS NOT NULL OR steamAppId IS NOT NULL)")
     suspend fun countGamesWithCachedBackgrounds(): Int
 
     @Query("UPDATE games SET coverPath = :path WHERE id = :gameId")

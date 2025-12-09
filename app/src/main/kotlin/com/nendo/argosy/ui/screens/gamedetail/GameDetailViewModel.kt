@@ -8,7 +8,9 @@ import com.nendo.argosy.data.download.DownloadState
 import com.nendo.argosy.data.emulator.EmulatorDetector
 import com.nendo.argosy.data.emulator.InstalledEmulator
 import com.nendo.argosy.data.emulator.LaunchResult
+import com.nendo.argosy.data.launcher.SteamLaunchers
 import com.nendo.argosy.data.local.dao.EmulatorConfigDao
+import com.nendo.argosy.data.model.GameSource
 import com.nendo.argosy.data.local.dao.GameDao
 import com.nendo.argosy.data.local.dao.PlatformDao
 import com.nendo.argosy.data.local.entity.GameEntity
@@ -106,6 +108,7 @@ data class GameDetailUiState(
 
 @HiltViewModel
 class GameDetailViewModel @Inject constructor(
+    @dagger.hilt.android.qualifiers.ApplicationContext private val context: android.content.Context,
     private val gameDao: GameDao,
     private val platformDao: PlatformDao,
     private val emulatorConfigDao: EmulatorConfigDao,
@@ -194,17 +197,28 @@ class GameDetailViewModel @Inject constructor(
             val emulatorName = emulatorConfig?.displayName
                 ?: emulatorDetector.getPreferredEmulator(game.platformId)?.def?.displayName
 
+            val isSteamGame = game.source == GameSource.STEAM
             val fileExists = gameRepository.checkGameFileExists(gameId)
 
-            val canPlay = fileExists && emulatorDetector.hasAnyEmulator(game.platformId)
+            val canPlay = if (isSteamGame) {
+                val launcher = game.steamLauncher?.let { SteamLaunchers.getByPackage(it) }
+                launcher?.isInstalled(context) == true
+            } else {
+                fileExists && emulatorDetector.hasAnyEmulator(game.platformId)
+            }
 
-            val downloadStatus = if (fileExists) {
+            val downloadStatus = if (isSteamGame || fileExists) {
                 GameDownloadStatus.DOWNLOADED
             } else {
                 GameDownloadStatus.NOT_DOWNLOADED
             }
 
-            val siblingIds = gameNavigationContext.getGameIds()
+            var siblingIds = gameNavigationContext.getGameIds()
+            if (siblingIds.isEmpty() || !siblingIds.contains(gameId)) {
+                val platformGames = gameDao.getByPlatform(game.platformId)
+                siblingIds = platformGames.map { it.id }
+                gameNavigationContext.setContext(siblingIds)
+            }
             val currentIndex = gameNavigationContext.getIndex(gameId)
 
             _uiState.update { state ->
@@ -267,6 +281,9 @@ class GameDetailViewModel @Inject constructor(
                 }
                 is LaunchResult.NoRomFile -> {
                     notificationManager.showError("ROM file not found. Download required.")
+                }
+                is LaunchResult.NoSteamLauncher -> {
+                    notificationManager.showError("Steam launcher not installed")
                 }
                 is LaunchResult.Error -> {
                     notificationManager.showError(result.message)
@@ -460,13 +477,14 @@ class GameDetailViewModel @Inject constructor(
                 cachedPath = cachedPaths.getOrNull(index)
             )
         }
+        val effectiveBackground = backgroundPath ?: remoteUrls.firstOrNull()
         return GameDetailUi(
             id = id,
             title = title,
             platformId = platformId,
             platformName = platformName,
             coverPath = coverPath,
-            backgroundPath = backgroundPath,
+            backgroundPath = effectiveBackground,
             developer = developer,
             publisher = publisher,
             releaseYear = releaseYear,
@@ -476,7 +494,7 @@ class GameDetailViewModel @Inject constructor(
             rating = rating,
             userRating = userRating,
             userDifficulty = userDifficulty,
-            isRommGame = rommId != null,
+            isRommGame = rommId != null || source == GameSource.STEAM,
             isFavorite = isFavorite,
             playCount = playCount,
             playTimeMinutes = playTimeMinutes,
@@ -497,24 +515,40 @@ class GameDetailViewModel @Inject constructor(
     ): InputHandler = object : InputHandler {
         override fun onUp(): InputResult {
             val state = _uiState.value
-            when {
-                state.showRatingPicker -> return InputResult.UNHANDLED
-                state.showEmulatorPicker -> moveEmulatorPickerFocus(-1)
-                state.showMoreOptions -> moveOptionsFocus(-1)
-                else -> onScrollUp()
+            return when {
+                state.showRatingPicker -> InputResult.UNHANDLED
+                state.showEmulatorPicker -> {
+                    moveEmulatorPickerFocus(-1)
+                    InputResult.HANDLED
+                }
+                state.showMoreOptions -> {
+                    moveOptionsFocus(-1)
+                    InputResult.HANDLED
+                }
+                else -> {
+                    onScrollUp()
+                    InputResult.handled(SoundType.SILENT)
+                }
             }
-            return InputResult.HANDLED
         }
 
         override fun onDown(): InputResult {
             val state = _uiState.value
-            when {
-                state.showRatingPicker -> return InputResult.UNHANDLED
-                state.showEmulatorPicker -> moveEmulatorPickerFocus(1)
-                state.showMoreOptions -> moveOptionsFocus(1)
-                else -> onScrollDown()
+            return when {
+                state.showRatingPicker -> InputResult.UNHANDLED
+                state.showEmulatorPicker -> {
+                    moveEmulatorPickerFocus(1)
+                    InputResult.HANDLED
+                }
+                state.showMoreOptions -> {
+                    moveOptionsFocus(1)
+                    InputResult.HANDLED
+                }
+                else -> {
+                    onScrollDown()
+                    InputResult.handled(SoundType.SILENT)
+                }
             }
-            return InputResult.HANDLED
         }
 
         override fun onLeft(): InputResult {
