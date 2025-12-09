@@ -20,38 +20,73 @@ First-class client for RomM self-hosted game library. Sync your entire collectio
 ### Hassle-Free ROM Management
 No manual folder organization required. Games are automatically sorted by platform when downloaded from your RomM server.
 
+### Library Filtering
+Browse your collection by genre, player count, franchise, or region. Find multiplayer games for a session or filter to your favorite series.
+
 ### Direct Downloads
 Download games from your RomM server directly to your device. Queue multiple downloads and track progress as they complete.
 
 ### Smart Emulator Detection
-Argosy auto-detects 40+ installed emulators and launches the appropriate one for each platform. Supports standalone emulators and RetroArch cores.
+Argosy auto-detects installed emulators and launches the appropriate one for each platform. Supports standalone emulators and RetroArch cores. If your preferred emulator isn't detected, [open an issue](https://github.com/nendotools/argosy-launcher/issues) and we'll add support.
 
 ### Gamepad-First Design
 Built for controller navigation from the ground up. Browse your library, download games, and launch emulators without touching the screen.
 
-### Library Filtering
-Browse your collection by genre, player count, franchise, or region. Find multiplayer games for a session or filter to your favorite series.
+### Image Caching
+Cache all images locally for offline browsing. Access your library with full cover art and metadata even without a network connection.
+
+### Steam Games (Experimental)
+Index and launch Steam games installed on your device. Supports games installed via GameHub or GameNative.
+
+### App Launcher
+Quick access to installed emulators and other apps without leaving the launcher.
 
 ## Supported Platforms
 
-NES, SNES, N64, Game Boy, Game Boy Color, Game Boy Advance, Nintendo DS, Nintendo 3DS, Switch, PlayStation, PS2, PSP, Dreamcast, Saturn, Genesis, Arcade, DOS, ScummVM, and many more.
+All your favorite classic systems. If RomM supports it, Argosy can display and launch it.
 
 ## Screenshots
 
-*Coming soon*
+### Home Screen
+<!-- Main interface with gamepad navigation -->
+
+### Game Library
+<!-- Cover art grid organized by platform -->
+
+### Library Filtering
+<!-- Browse by genre, franchise, player count, region -->
+
+### Game Details
+<!-- IGDB metadata, launch options -->
+
+### Downloads
+<!-- Download queue and progress tracking -->
+
+### Settings
+<!-- RomM server connection setup -->
+
+### Apps
+<!-- Installed emulators and apps view -->
 
 ## Getting Started
 
-1. Install the Argosy APK on your device
-2. Open Settings and configure your RomM server connection
-3. Sync your library
-4. Play!
+1. Download the latest APK from [GitHub Releases](https://github.com/nendotools/argosy-launcher/releases/latest)
+2. Install the APK on your device
+3. Open Settings and configure your RomM server connection
+4. Sync your library
+5. Play!
+
+After the initial install, updates can be installed directly within the app.
 
 ## Requirements
 
 - Android 8.0 (Oreo) or higher
 - A running [RomM](https://github.com/rommapp/romm) server
 - Emulators installed for your desired platforms
+
+## Beta Releases
+
+You can subscribe to beta releases for early access to new features. Beta versions may be unstable and introduce breaking changes. Check the [Releases](https://github.com/nendotools/argosy-launcher/releases) page for available beta builds.
 
 ## License
 
