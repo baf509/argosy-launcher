@@ -12,6 +12,7 @@ import com.nendo.argosy.data.local.dao.PendingSaveSyncDao
 import com.nendo.argosy.data.local.dao.PendingSyncDao
 import com.nendo.argosy.data.local.dao.PlatformDao
 import com.nendo.argosy.data.local.dao.SaveSyncDao
+import com.nendo.argosy.data.local.dao.AchievementDao
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -43,7 +44,9 @@ object DatabaseModule {
                 ALauncherDatabase.MIGRATION_9_10,
                 ALauncherDatabase.MIGRATION_10_11,
                 ALauncherDatabase.MIGRATION_11_12,
-                ALauncherDatabase.MIGRATION_12_13
+                ALauncherDatabase.MIGRATION_12_13,
+                ALauncherDatabase.MIGRATION_13_14,
+                ALauncherDatabase.MIGRATION_14_15
             )
             .build()
     }
@@ -80,4 +83,8 @@ object DatabaseModule {
     @Provides
     fun provideEmulatorSaveConfigDao(database: ALauncherDatabase): EmulatorSaveConfigDao =
         database.emulatorSaveConfigDao()
+
+    @Provides
+    fun provideAchievementDao(database: ALauncherDatabase): AchievementDao =
+        database.achievementDao()
 }

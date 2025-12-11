@@ -29,10 +29,12 @@ data class RomMRom(
 
     @Json(name = "igdb_id") val igdbId: Long?,
     @Json(name = "moby_id") val mobyId: Long?,
+    @Json(name = "ra_id") val raId: Long? = null,
 
     @Json(name = "summary") val summary: String?,
     @Json(name = "metadatum") val metadatum: RomMMetadatum? = null,
     @Json(name = "launchbox_metadata") val launchboxMetadata: RomMLaunchboxMetadata? = null,
+    @Json(name = "merged_ra_metadata") val raMetadata: RomMRAMetadata? = null,
 
     @Json(name = "path_cover_small") val coverSmall: String?,
     @Json(name = "path_cover_large") val coverLarge: String?,
@@ -191,4 +193,20 @@ data class RomMUserPropsUpdateData(
 @JsonClass(generateAdapter = true)
 data class RomMUserPropsUpdate(
     @Json(name = "data") val data: RomMUserPropsUpdateData
+)
+
+@JsonClass(generateAdapter = true)
+data class RomMRAMetadata(
+    @Json(name = "achievements") val achievements: List<RomMAchievement>? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class RomMAchievement(
+    @Json(name = "ra_id") val raId: Long,
+    @Json(name = "title") val title: String,
+    @Json(name = "description") val description: String?,
+    @Json(name = "points") val points: Int,
+    @Json(name = "type") val type: String?,
+    @Json(name = "badge_url") val badgeUrl: String?,
+    @Json(name = "badge_url_lock") val badgeUrlLock: String?
 )

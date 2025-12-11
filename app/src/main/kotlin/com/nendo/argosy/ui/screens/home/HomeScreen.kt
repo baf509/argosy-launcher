@@ -44,6 +44,7 @@ import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Whatshot
+import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -245,6 +246,7 @@ fun HomeScreen(
                     rating = uiState.focusedGame?.rating,
                     userRating = uiState.focusedGame?.userRating ?: 0,
                     userDifficulty = uiState.focusedGame?.userDifficulty ?: 0,
+                    achievementCount = uiState.focusedGame?.achievementCount ?: 0,
                     modifier = Modifier
                         .fillMaxWidth(0.6f)
                         .align(Alignment.TopEnd)
@@ -371,6 +373,7 @@ private fun GameInfo(
     rating: Float?,
     userRating: Int,
     userDifficulty: Int,
+    achievementCount: Int,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -394,8 +397,8 @@ private fun GameInfo(
             )
         }
 
-        val hasRatings = rating != null || userRating > 0 || userDifficulty > 0
-        if (hasRatings) {
+        val hasBadges = rating != null || userRating > 0 || userDifficulty > 0 || achievementCount > 0
+        if (hasBadges) {
             Spacer(modifier = Modifier.height(4.dp))
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -450,6 +453,24 @@ private fun GameInfo(
                         )
                         Text(
                             text = "$userDifficulty/10",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = Color.White.copy(alpha = 0.7f)
+                        )
+                    }
+                }
+                if (achievementCount > 0) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.EmojiEvents,
+                            contentDescription = null,
+                            tint = Color(0xFFFFB300),
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Text(
+                            text = "0/$achievementCount",
                             style = MaterialTheme.typography.labelMedium,
                             color = Color.White.copy(alpha = 0.7f)
                         )

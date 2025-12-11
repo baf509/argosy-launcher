@@ -134,8 +134,8 @@ fun ArgosyApp(
     // Collect gamepad events (Menu opens drawer if unhandled)
     LaunchedEffect(Unit) {
         viewModel.gamepadInputHandler.eventFlow().collect { event ->
-            val handled = inputDispatcher.dispatch(event)
-            if (!handled && event == GamepadEvent.Menu) {
+            val result = inputDispatcher.dispatch(event)
+            if (!result.handled && event == GamepadEvent.Menu) {
                 openDrawer()
             }
         }

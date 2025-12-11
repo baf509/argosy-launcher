@@ -25,23 +25,23 @@ import com.nendo.argosy.ui.theme.Dimens
 enum class InputButton {
     SOUTH, EAST, WEST, NORTH,
     DPAD, DPAD_UP, DPAD_DOWN, DPAD_LEFT, DPAD_RIGHT, DPAD_HORIZONTAL, DPAD_VERTICAL,
-    LB, RB, LT, RT,
+    LB, RB, LB_RB, LT, RT,
     START, SELECT
 }
 
-private enum class HintCategory { DPAD, SHOULDER_MENU, FACE }
+private enum class HintCategory { DPAD, BUMPER, SHOULDER_MENU, FACE }
 
 private fun InputButton.category(): HintCategory = when (this) {
     InputButton.DPAD, InputButton.DPAD_UP, InputButton.DPAD_DOWN,
     InputButton.DPAD_LEFT, InputButton.DPAD_RIGHT,
     InputButton.DPAD_HORIZONTAL, InputButton.DPAD_VERTICAL -> HintCategory.DPAD
-    InputButton.LB, InputButton.RB, InputButton.LT, InputButton.RT,
-    InputButton.START, InputButton.SELECT -> HintCategory.SHOULDER_MENU
+    InputButton.LB, InputButton.RB, InputButton.LB_RB -> HintCategory.BUMPER
+    InputButton.LT, InputButton.RT, InputButton.START, InputButton.SELECT -> HintCategory.SHOULDER_MENU
     InputButton.SOUTH, InputButton.EAST, InputButton.WEST, InputButton.NORTH -> HintCategory.FACE
 }
 
 @Composable
-private fun InputButton.toPainter(): Painter {
+private fun InputButton.toPainter(): Painter? {
     val abIconsSwapped = LocalABIconsSwapped.current
     val swapStartSelect = LocalSwapStartSelect.current
     return when (this) {
@@ -58,12 +58,15 @@ private fun InputButton.toPainter(): Painter {
         InputButton.DPAD_VERTICAL -> InputIcons.DpadVertical
         InputButton.LB -> InputIcons.BumperLeft
         InputButton.RB -> InputIcons.BumperRight
+        InputButton.LB_RB -> null
         InputButton.LT -> InputIcons.TriggerLeft
         InputButton.RT -> InputIcons.TriggerRight
         InputButton.START -> if (swapStartSelect) InputIcons.Options else InputIcons.Menu
         InputButton.SELECT -> if (swapStartSelect) InputIcons.Menu else InputIcons.Options
     }
 }
+
+private fun InputButton.isComposite(): Boolean = this == InputButton.LB_RB
 
 private fun InputButton.isDpadButton(): Boolean = when (this) {
     InputButton.DPAD, InputButton.DPAD_UP, InputButton.DPAD_DOWN,
@@ -82,18 +85,53 @@ fun FooterHint(
         modifier = modifier,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(
-            painter = button.toPainter(),
-            contentDescription = button.name,
-            tint = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.size(20.dp)
-        )
+        if (button.isComposite()) {
+            CompositeButtonIcon(button)
+        } else {
+            button.toPainter()?.let { painter ->
+                Icon(
+                    painter = painter,
+                    contentDescription = button.name,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+        }
         Spacer(modifier = Modifier.width(Dimens.spacingXs))
         Text(
             text = action,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+    }
+}
+
+@Composable
+private fun CompositeButtonIcon(button: InputButton) {
+    when (button) {
+        InputButton.LB_RB -> {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    painter = InputIcons.BumperLeft,
+                    contentDescription = "LB",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(20.dp)
+                )
+                Text(
+                    text = "/",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(horizontal = 2.dp)
+                )
+                Icon(
+                    painter = InputIcons.BumperRight,
+                    contentDescription = "RB",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+        }
+        else -> {}
     }
 }
 
@@ -112,6 +150,7 @@ fun FooterBar(
     trailingContent: @Composable (() -> Unit)? = null
 ) {
     val dpadHints = hints.filter { it.first.category() == HintCategory.DPAD }
+    val bumperHints = hints.filter { it.first.category() == HintCategory.BUMPER }
     val shoulderHints = hints.filter { it.first.category() == HintCategory.SHOULDER_MENU }
     val faceHints = hints.filter { it.first.category() == HintCategory.FACE }
         .sortedBy { it.first.faceButtonPriority() }
@@ -125,6 +164,9 @@ fun FooterBar(
     ) {
         Row(horizontalArrangement = Arrangement.spacedBy(Dimens.spacingLg)) {
             dpadHints.forEach { (button, action) ->
+                FooterHint(button = button, action = action)
+            }
+            bumperHints.forEach { (button, action) ->
                 FooterHint(button = button, action = action)
             }
         }

@@ -15,6 +15,8 @@ import com.nendo.argosy.data.local.dao.PendingSaveSyncDao
 import com.nendo.argosy.data.local.dao.PendingSyncDao
 import com.nendo.argosy.data.local.dao.PlatformDao
 import com.nendo.argosy.data.local.dao.SaveSyncDao
+import com.nendo.argosy.data.local.dao.AchievementDao
+import com.nendo.argosy.data.local.entity.AchievementEntity
 import com.nendo.argosy.data.local.entity.DownloadQueueEntity
 import com.nendo.argosy.data.local.entity.EmulatorConfigEntity
 import com.nendo.argosy.data.local.entity.EmulatorSaveConfigEntity
@@ -35,9 +37,10 @@ import com.nendo.argosy.data.local.entity.SaveSyncEntity
         SaveSyncEntity::class,
         PendingSaveSyncEntity::class,
         EmulatorSaveConfigEntity::class,
-        GameDiscEntity::class
+        GameDiscEntity::class,
+        AchievementEntity::class
     ],
-    version = 13,
+    version = 15,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -51,6 +54,7 @@ abstract class ALauncherDatabase : RoomDatabase() {
     abstract fun saveSyncDao(): SaveSyncDao
     abstract fun pendingSaveSyncDao(): PendingSaveSyncDao
     abstract fun emulatorSaveConfigDao(): EmulatorSaveConfigDao
+    abstract fun achievementDao(): AchievementDao
 
     companion object {
         val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -266,6 +270,33 @@ abstract class ALauncherDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE emulator_configs_new RENAME TO emulator_configs")
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_emulator_configs_platformId ON emulator_configs(platformId)")
                 db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_emulator_configs_gameId ON emulator_configs(gameId)")
+            }
+        }
+
+        val MIGRATION_13_14 = object : Migration(13, 14) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE games ADD COLUMN achievementCount INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
+        val MIGRATION_14_15 = object : Migration(14, 15) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS achievements (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        gameId INTEGER NOT NULL,
+                        raId INTEGER NOT NULL,
+                        title TEXT NOT NULL,
+                        description TEXT,
+                        points INTEGER NOT NULL,
+                        type TEXT,
+                        badgeUrl TEXT,
+                        badgeUrlLock TEXT,
+                        isUnlocked INTEGER NOT NULL DEFAULT 0,
+                        FOREIGN KEY (gameId) REFERENCES games(id) ON DELETE CASCADE
+                    )
+                """)
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_achievements_gameId ON achievements(gameId)")
             }
         }
     }

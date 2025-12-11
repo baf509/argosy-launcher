@@ -323,7 +323,8 @@ class RomMRepository @Inject constructor(
             playCount = existing?.playCount ?: 0,
             playTimeMinutes = existing?.playTimeMinutes ?: 0,
             lastPlayed = existing?.lastPlayed,
-            addedAt = existing?.addedAt ?: java.time.Instant.now()
+            addedAt = existing?.addedAt ?: java.time.Instant.now(),
+            achievementCount = rom.raMetadata?.achievements?.size ?: existing?.achievementCount ?: 0
         )
 
         val isNew = existing == null

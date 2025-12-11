@@ -8,11 +8,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -22,7 +21,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.ScrollState
-import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -30,7 +28,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Album
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.MoreVert
@@ -40,16 +37,22 @@ import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarOutline
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Whatshot
+import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.outlined.Whatshot
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Button
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInParent
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -59,6 +62,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.lifecycle.Lifecycle
@@ -120,15 +124,124 @@ fun GameDetailScreen(
     val scrollState = rememberScrollState()
     val coroutineScope = rememberCoroutineScope()
 
-    LaunchedEffect(uiState.game?.id) {
-        scrollState.scrollTo(0)
+    val screenshotListState = rememberLazyListState()
+    val achievementListState = rememberLazyListState()
+
+    var descriptionTopY by remember { mutableStateOf(0) }
+    var screenshotTopY by remember { mutableStateOf(0) }
+    var achievementTopY by remember { mutableStateOf(0) }
+
+    val game = uiState.game
+    val hasDescription = game?.description?.isNotEmpty() == true
+    val hasScreenshots = game?.screenshots?.isNotEmpty() == true
+    val hasAchievements = game?.achievements?.isNotEmpty() == true
+    val screenshotCount = game?.screenshots?.size ?: 0
+    val achievementColumnCount = game?.achievements?.chunked(3)?.size ?: 0
+
+    val snapStates = remember(hasDescription, hasScreenshots, hasAchievements) {
+        buildList {
+            add(SnapState.TOP)
+            if (hasDescription) add(SnapState.DESCRIPTION)
+            if (hasScreenshots) add(SnapState.SCREENSHOTS)
+            if (hasAchievements) add(SnapState.ACHIEVEMENTS)
+        }
     }
 
-    val inputHandler = remember(onBack, scrollState) {
+    var currentSnapIndex by remember { mutableStateOf(0) }
+
+    fun getSnapTarget(state: SnapState): Int = when (state) {
+        SnapState.TOP -> 0
+        SnapState.DESCRIPTION -> descriptionTopY.coerceAtLeast(0)
+        SnapState.SCREENSHOTS -> screenshotTopY.coerceAtLeast(0)
+        SnapState.ACHIEVEMENTS -> achievementTopY.coerceAtLeast(0)
+    }
+
+    LaunchedEffect(uiState.game?.id) {
+        currentSnapIndex = 0
+        scrollState.scrollTo(0)
+        screenshotListState.scrollToItem(0)
+        achievementListState.scrollToItem(0)
+    }
+
+    val inputHandler = remember(onBack, snapStates, screenshotCount, achievementColumnCount) {
         viewModel.createInputHandler(
             onBack = onBack,
-            onScrollUp = { coroutineScope.launch { scrollState.animateScrollBy(-200f) } },
-            onScrollDown = { coroutineScope.launch { scrollState.animateScrollBy(200f) } }
+            onSnapUp = {
+                if (currentSnapIndex > 0) {
+                    currentSnapIndex--
+                    coroutineScope.launch {
+                        scrollState.animateScrollTo(getSnapTarget(snapStates[currentSnapIndex]))
+                    }
+                    true
+                } else false
+            },
+            onSnapDown = {
+                if (currentSnapIndex < snapStates.lastIndex) {
+                    currentSnapIndex++
+                    coroutineScope.launch {
+                        scrollState.animateScrollTo(getSnapTarget(snapStates[currentSnapIndex]))
+                    }
+                    true
+                } else false
+            },
+            onSectionLeft = {
+                coroutineScope.launch {
+                    val snapState = snapStates.getOrElse(currentSnapIndex) { SnapState.TOP }
+                    val targetSection = when (snapState) {
+                        SnapState.TOP, SnapState.DESCRIPTION -> {
+                            if (hasScreenshots) SnapState.SCREENSHOTS
+                            else if (hasAchievements) SnapState.ACHIEVEMENTS
+                            else null
+                        }
+                        SnapState.SCREENSHOTS -> SnapState.SCREENSHOTS
+                        SnapState.ACHIEVEMENTS -> SnapState.ACHIEVEMENTS
+                    }
+                    when (targetSection) {
+                        SnapState.SCREENSHOTS -> {
+                            val current = screenshotListState.firstVisibleItemIndex
+                            val target = if (current > 0) current - 1 else screenshotCount - 1
+                            screenshotListState.scrollToItem(target)
+                        }
+                        SnapState.ACHIEVEMENTS -> {
+                            val current = achievementListState.firstVisibleItemIndex
+                            val target = if (current > 0) current - 1 else achievementColumnCount - 1
+                            achievementListState.scrollToItem(target)
+                        }
+                        else -> {}
+                    }
+                }
+            },
+            onSectionRight = {
+                coroutineScope.launch {
+                    val snapState = snapStates.getOrElse(currentSnapIndex) { SnapState.TOP }
+                    val targetSection = when (snapState) {
+                        SnapState.TOP, SnapState.DESCRIPTION -> {
+                            if (hasScreenshots) SnapState.SCREENSHOTS
+                            else if (hasAchievements) SnapState.ACHIEVEMENTS
+                            else null
+                        }
+                        SnapState.SCREENSHOTS -> SnapState.SCREENSHOTS
+                        SnapState.ACHIEVEMENTS -> SnapState.ACHIEVEMENTS
+                    }
+                    when (targetSection) {
+                        SnapState.SCREENSHOTS -> {
+                            val isAtEnd = !screenshotListState.canScrollForward
+                            val current = screenshotListState.firstVisibleItemIndex
+                            val target = if (isAtEnd) 0 else current + 1
+                            screenshotListState.scrollToItem(target)
+                        }
+                        SnapState.ACHIEVEMENTS -> {
+                            val isAtEnd = !achievementListState.canScrollForward
+                            val current = achievementListState.firstVisibleItemIndex
+                            val target = if (isAtEnd) 0 else current + 1
+                            achievementListState.scrollToItem(target)
+                        }
+                        else -> {}
+                    }
+                }
+            },
+            onPrevGame = { viewModel.navigateToPreviousGame() },
+            onNextGame = { viewModel.navigateToNextGame() }
         )
     }
 
@@ -147,7 +260,6 @@ fun GameDetailScreen(
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        val game = uiState.game
         if (uiState.isLoading || game == null) {
             GameDetailSkeleton()
         } else {
@@ -155,18 +267,32 @@ fun GameDetailScreen(
                 game = game,
                 uiState = uiState,
                 viewModel = viewModel,
-                scrollState = scrollState
+                scrollState = scrollState,
+                screenshotListState = screenshotListState,
+                achievementListState = achievementListState,
+                currentSnapState = snapStates.getOrElse(currentSnapIndex) { SnapState.TOP },
+                onDescriptionPositioned = { descriptionTopY = it },
+                onScreenshotPositioned = { screenshotTopY = it },
+                onAchievementPositioned = { achievementTopY = it }
             )
         }
     }
 }
+
+private enum class SnapState { TOP, DESCRIPTION, SCREENSHOTS, ACHIEVEMENTS }
 
 @Composable
 private fun GameDetailContent(
     game: GameDetailUi,
     uiState: GameDetailUiState,
     viewModel: GameDetailViewModel,
-    scrollState: ScrollState
+    scrollState: ScrollState,
+    screenshotListState: LazyListState,
+    achievementListState: LazyListState,
+    currentSnapState: SnapState,
+    onDescriptionPositioned: (Int) -> Unit,
+    onScreenshotPositioned: (Int) -> Unit,
+    onAchievementPositioned: (Int) -> Unit
 ) {
     val showAnyOverlay = uiState.showMoreOptions || uiState.showEmulatorPicker || uiState.showCorePicker ||
         uiState.showRatingPicker || uiState.showDiscPicker || uiState.showMissingDiscPrompt
@@ -384,89 +510,185 @@ private fun GameDetailContent(
             Spacer(modifier = Modifier.height(32.dp))
 
             if (!game.description.isNullOrBlank()) {
-                Text(
-                    text = "DESCRIPTION",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = game.description,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = Color.White.copy(alpha = 0.8f),
-                    maxLines = 6,
-                    overflow = TextOverflow.Ellipsis
-                )
+                Column(
+                    modifier = Modifier.onGloballyPositioned { coords ->
+                        onDescriptionPositioned(coords.positionInParent().y.toInt())
+                    }
+                ) {
+                    Text(
+                        text = "DESCRIPTION",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = game.description,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color.White.copy(alpha = 0.8f),
+                        maxLines = 6,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
                 Spacer(modifier = Modifier.height(24.dp))
             }
 
             if (game.screenshots.isNotEmpty()) {
-                Text(
-                    text = "SCREENSHOTS",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-
-                val screenshotListState = rememberLazyListState()
-                var scrollDirection by remember { mutableIntStateOf(1) }
-
-                LaunchedEffect(game.screenshots) {
-                    if (game.screenshots.size <= 1) return@LaunchedEffect
-
-                    while (true) {
-                        delay(3000)
-
-                        val layoutInfo = screenshotListState.layoutInfo
-                        val currentIndex = layoutInfo.visibleItemsInfo.firstOrNull()?.index ?: 0
-                        val lastIndex = game.screenshots.size - 1
-
-                        val nextIndex = when {
-                            scrollDirection > 0 && currentIndex >= lastIndex -> {
-                                scrollDirection = -1
-                                currentIndex - 1
-                            }
-                            scrollDirection < 0 && currentIndex <= 0 -> {
-                                scrollDirection = 1
-                                currentIndex + 1
-                            }
-                            else -> currentIndex + scrollDirection
-                        }.coerceIn(0, lastIndex)
-
-                        screenshotListState.animateScrollToItem(nextIndex)
+                Column(
+                    modifier = Modifier.onGloballyPositioned { coords ->
+                        onScreenshotPositioned(coords.positionInParent().y.toInt())
                     }
-                }
-
-                LazyRow(
-                    state = screenshotListState,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    items(game.screenshots) { screenshot ->
-                        Box(
-                            modifier = Modifier
-                                .width(240.dp)
-                                .height(135.dp)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(MaterialTheme.colorScheme.surfaceVariant)
-                        ) {
-                            screenshot.cachedPath?.let { path ->
+                    Text(
+                        text = "SCREENSHOTS",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    var scrollDirection by remember { mutableIntStateOf(1) }
+                    val currentSnapStateUpdated by rememberUpdatedState(currentSnapState)
+
+                    LaunchedEffect(game.screenshots) {
+                        if (game.screenshots.size <= 1) return@LaunchedEffect
+
+                        while (true) {
+                            delay(3000)
+                            if (currentSnapStateUpdated == SnapState.SCREENSHOTS) continue
+
+                            val layoutInfo = screenshotListState.layoutInfo
+                            val currentIndex = layoutInfo.visibleItemsInfo.firstOrNull()?.index ?: 0
+                            val lastIndex = game.screenshots.size - 1
+
+                            val nextIndex = when {
+                                scrollDirection > 0 && currentIndex >= lastIndex -> {
+                                    scrollDirection = -1
+                                    currentIndex - 1
+                                }
+                                scrollDirection < 0 && currentIndex <= 0 -> {
+                                    scrollDirection = 1
+                                    currentIndex + 1
+                                }
+                                else -> currentIndex + scrollDirection
+                            }.coerceIn(0, lastIndex)
+
+                            screenshotListState.animateScrollToItem(nextIndex)
+                        }
+                    }
+
+                    LazyRow(
+                        state = screenshotListState,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        items(game.screenshots) { screenshot ->
+                            Box(
+                                modifier = Modifier
+                                    .width(240.dp)
+                                    .height(135.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                            ) {
+                                screenshot.cachedPath?.let { path ->
+                                    AsyncImage(
+                                        model = java.io.File(path),
+                                        contentDescription = null,
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                }
                                 AsyncImage(
-                                    model = java.io.File(path),
+                                    model = screenshot.remoteUrl,
                                     contentDescription = null,
                                     contentScale = ContentScale.Crop,
                                     modifier = Modifier.fillMaxSize()
                                 )
                             }
-                            AsyncImage(
-                                model = screenshot.remoteUrl,
-                                contentDescription = null,
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize()
-                            )
                         }
                     }
                 }
+                Spacer(modifier = Modifier.height(24.dp))
             }
+
+            if (game.achievements.isNotEmpty()) {
+                Column(
+                    modifier = Modifier.onGloballyPositioned { coords ->
+                        onAchievementPositioned(coords.positionInParent().y.toInt())
+                    }
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.EmojiEvents,
+                            contentDescription = null,
+                            tint = Color(0xFFFFB300),
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Text(
+                            text = "ACHIEVEMENTS",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            text = "(0/${game.achievements.size})",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.White.copy(alpha = 0.5f)
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    val achievementColumns = game.achievements.chunked(3)
+                    val currentSnapStateForAchievements by rememberUpdatedState(currentSnapState)
+
+                    LaunchedEffect(achievementColumns) {
+                        if (achievementColumns.size <= 1) return@LaunchedEffect
+
+                        var scrollDirection = 1
+                        while (true) {
+                            delay(4000)
+                            if (currentSnapStateForAchievements == SnapState.ACHIEVEMENTS) continue
+
+                            val layoutInfo = achievementListState.layoutInfo
+                            val currentIndex = layoutInfo.visibleItemsInfo.firstOrNull()?.index ?: 0
+                            val lastIndex = achievementColumns.size - 1
+
+                            val nextIndex = when {
+                                scrollDirection > 0 && currentIndex >= lastIndex -> {
+                                    scrollDirection = -1
+                                    currentIndex - 1
+                                }
+                                scrollDirection < 0 && currentIndex <= 0 -> {
+                                    scrollDirection = 1
+                                    currentIndex + 1
+                                }
+                                else -> currentIndex + scrollDirection
+                            }.coerceIn(0, lastIndex)
+
+                            achievementListState.animateScrollToItem(nextIndex)
+                        }
+                    }
+
+                    BoxWithConstraints {
+                        val isWidescreen = maxWidth / maxHeight > 1.5f
+                        val columnWidth = if (isWidescreen) maxWidth / 2 else maxWidth
+
+                        LazyRow(
+                            state = achievementListState,
+                            horizontalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            items(achievementColumns) { columnAchievements ->
+                                AchievementColumn(
+                                    achievements = columnAchievements,
+                                    modifier = Modifier.width(columnWidth - 16.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(24.dp))
+            }
+
+            Spacer(modifier = Modifier.height(30.dp))
         }
         }
 
@@ -551,8 +773,7 @@ private fun GameDetailContent(
         ) {
             FooterBar(
                 hints = listOf(
-                    InputButton.DPAD_VERTICAL to "Scroll",
-                    InputButton.DPAD_HORIZONTAL to "Change Game",
+                    InputButton.LB_RB to "Prev/Next Game",
                     InputButton.SOUTH to when (uiState.downloadStatus) {
                         GameDownloadStatus.DOWNLOADED -> "Play"
                         GameDownloadStatus.NOT_DOWNLOADED -> "Download"
@@ -1218,6 +1439,93 @@ private fun GameDetailSkeleton() {
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun AchievementRow(achievement: AchievementUi) {
+    val grayscaleMatrix = ColorMatrix().apply { setToSaturation(0f) }
+    val goldColor = Color(0xFFFFB300)
+    val lockedColor = Color.White.copy(alpha = 0.5f)
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.width(56.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                contentAlignment = Alignment.Center
+            ) {
+                if (achievement.badgeUrl != null) {
+                    AsyncImage(
+                        model = achievement.badgeUrl,
+                        contentDescription = achievement.title,
+                        contentScale = ContentScale.Fit,
+                        colorFilter = if (!achievement.isUnlocked) {
+                            ColorFilter.colorMatrix(grayscaleMatrix)
+                        } else null,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .alpha(if (achievement.isUnlocked) 1f else 0.7f)
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Filled.EmojiEvents,
+                        contentDescription = null,
+                        tint = if (achievement.isUnlocked) goldColor else Color.Gray,
+                        modifier = Modifier.size(32.dp)
+                    )
+                }
+            }
+            Text(
+                text = "${achievement.points} pts",
+                style = MaterialTheme.typography.labelSmall,
+                color = goldColor.copy(alpha = 0.8f),
+                modifier = Modifier.padding(top = 2.dp)
+            )
+        }
+
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text(
+                text = achievement.title,
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (achievement.isUnlocked) goldColor else lockedColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            if (!achievement.description.isNullOrBlank()) {
+                Text(
+                    text = achievement.description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.White.copy(alpha = 0.6f)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AchievementColumn(
+    achievements: List<AchievementUi>,
+    modifier: Modifier = Modifier
+) {
+    Column(modifier = modifier) {
+        achievements.forEach { achievement ->
+            AchievementRow(achievement)
         }
     }
 }

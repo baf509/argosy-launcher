@@ -19,6 +19,7 @@ import com.nendo.argosy.data.local.dao.GameDiscDao
 import com.nendo.argosy.data.local.dao.PlatformDao
 import com.nendo.argosy.data.local.entity.GameEntity
 import com.nendo.argosy.data.remote.romm.RomMRepository
+import com.nendo.argosy.data.remote.romm.RomMResult
 import com.nendo.argosy.data.repository.GameRepository
 import com.nendo.argosy.domain.usecase.download.DownloadGameUseCase
 import com.nendo.argosy.domain.usecase.download.DownloadResult
@@ -58,6 +59,16 @@ data class DiscUi(
     val isLastPlayed: Boolean
 )
 
+data class AchievementUi(
+    val raId: Long,
+    val title: String,
+    val description: String?,
+    val points: Int,
+    val type: String?,
+    val badgeUrl: String?,
+    val isUnlocked: Boolean = false
+)
+
 data class GameDetailUi(
     val id: Long,
     val title: String,
@@ -79,6 +90,7 @@ data class GameDetailUi(
     val playCount: Int,
     val playTimeMinutes: Int,
     val screenshots: List<ScreenshotPair>,
+    val achievements: List<AchievementUi> = emptyList(),
     val emulatorName: String?,
     val canPlay: Boolean,
     val isMultiDisc: Boolean = false,
@@ -147,7 +159,8 @@ class GameDetailViewModel @Inject constructor(
     private val configureEmulatorUseCase: ConfigureEmulatorUseCase,
     private val romMRepository: RomMRepository,
     private val soundManager: SoundFeedbackManager,
-    private val gameActions: GameActionsDelegate
+    private val gameActions: GameActionsDelegate,
+    private val achievementDao: com.nendo.argosy.data.local.dao.AchievementDao
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(GameDetailUiState())
@@ -280,6 +293,12 @@ class GameDetailViewModel @Inject constructor(
             }
             val currentIndex = gameNavigationContext.getIndex(gameId)
 
+            val cachedAchievements = if (game.rommId != null) {
+                achievementDao.getByGameId(gameId).map { it.toUi() }
+            } else {
+                emptyList()
+            }
+
             _uiState.update { state ->
                 state.copy(
                     game = game.toUi(
@@ -287,7 +306,8 @@ class GameDetailViewModel @Inject constructor(
                         emulatorName = emulatorName,
                         canPlay = canPlay,
                         isRetroArch = isRetroArch,
-                        selectedCoreName = selectedCoreName
+                        selectedCoreName = selectedCoreName,
+                        achievements = cachedAchievements
                     ),
                     isLoading = false,
                     downloadStatus = downloadStatus,
@@ -299,8 +319,67 @@ class GameDetailViewModel @Inject constructor(
                     selectedCoreId = selectedCoreId
                 )
             }
+
+            if (game.rommId != null) {
+                refreshAchievementsInBackground(game.rommId, gameId)
+            }
         }
     }
+    private suspend fun fetchAndCacheAchievements(rommId: Long, gameId: Long): List<AchievementUi> {
+        return when (val result = romMRepository.getRom(rommId)) {
+            is RomMResult.Success -> {
+                val apiAchievements = result.data.raMetadata?.achievements ?: emptyList()
+                if (apiAchievements.isNotEmpty()) {
+                    val entities = apiAchievements.map { achievement ->
+                        com.nendo.argosy.data.local.entity.AchievementEntity(
+                            gameId = gameId,
+                            raId = achievement.raId,
+                            title = achievement.title,
+                            description = achievement.description,
+                            points = achievement.points,
+                            type = achievement.type,
+                            badgeUrl = achievement.badgeUrl,
+                            badgeUrlLock = achievement.badgeUrlLock,
+                            isUnlocked = false
+                        )
+                    }
+                    achievementDao.replaceForGame(gameId, entities)
+                    gameDao.updateAchievementCount(gameId, entities.size)
+                }
+                apiAchievements.map { achievement ->
+                    AchievementUi(
+                        raId = achievement.raId,
+                        title = achievement.title,
+                        description = achievement.description,
+                        points = achievement.points,
+                        type = achievement.type,
+                        badgeUrl = achievement.badgeUrlLock ?: achievement.badgeUrl,
+                        isUnlocked = false
+                    )
+                }
+            }
+            is RomMResult.Error -> emptyList()
+        }
+    }
+
+    private suspend fun refreshAchievementsInBackground(rommId: Long, gameId: Long) {
+        val fresh = fetchAndCacheAchievements(rommId, gameId)
+        if (fresh.isNotEmpty()) {
+            _uiState.update { state ->
+                state.copy(game = state.game?.copy(achievements = fresh))
+            }
+        }
+    }
+
+    private fun com.nendo.argosy.data.local.entity.AchievementEntity.toUi() = AchievementUi(
+        raId = raId,
+        title = title,
+        description = description,
+        points = points,
+        type = type,
+        badgeUrl = badgeUrlLock ?: badgeUrl,
+        isUnlocked = isUnlocked
+    )
 
     fun downloadGame() {
         val now = System.currentTimeMillis()
@@ -676,7 +755,8 @@ class GameDetailViewModel @Inject constructor(
         emulatorName: String?,
         canPlay: Boolean,
         isRetroArch: Boolean = false,
-        selectedCoreName: String? = null
+        selectedCoreName: String? = null,
+        achievements: List<AchievementUi> = emptyList()
     ): GameDetailUi {
         val remoteUrls = screenshotPaths?.split(",")?.filter { it.isNotBlank() } ?: emptyList()
         val cachedPaths = cachedScreenshotPaths?.split(",")?.filter { it.isNotBlank() } ?: emptyList()
@@ -708,6 +788,7 @@ class GameDetailViewModel @Inject constructor(
             playCount = playCount,
             playTimeMinutes = playTimeMinutes,
             screenshots = screenshots,
+            achievements = achievements,
             emulatorName = emulatorName,
             canPlay = canPlay,
             isMultiDisc = isMultiDisc,
@@ -721,10 +802,26 @@ class GameDetailViewModel @Inject constructor(
         notificationManager.showError(message)
     }
 
+    fun navigateToPreviousGame() {
+        gameNavigationContext.getPreviousGameId(currentGameId)?.let { prevId ->
+            loadGame(prevId)
+        }
+    }
+
+    fun navigateToNextGame() {
+        gameNavigationContext.getNextGameId(currentGameId)?.let { nextId ->
+            loadGame(nextId)
+        }
+    }
+
     fun createInputHandler(
         onBack: () -> Unit,
-        onScrollUp: () -> Unit = {},
-        onScrollDown: () -> Unit = {}
+        onSnapUp: () -> Boolean = { false },
+        onSnapDown: () -> Boolean = { false },
+        onSectionLeft: () -> Unit = {},
+        onSectionRight: () -> Unit = {},
+        onPrevGame: () -> Unit = {},
+        onNextGame: () -> Unit = {}
     ): InputHandler = object : InputHandler {
         override fun onUp(): InputResult {
             val state = _uiState.value
@@ -748,8 +845,7 @@ class GameDetailViewModel @Inject constructor(
                     InputResult.HANDLED
                 }
                 else -> {
-                    onScrollUp()
-                    InputResult.handled(SoundType.SILENT)
+                    if (onSnapUp()) InputResult.HANDLED else InputResult.UNHANDLED
                 }
             }
         }
@@ -776,8 +872,7 @@ class GameDetailViewModel @Inject constructor(
                     InputResult.HANDLED
                 }
                 else -> {
-                    onScrollDown()
-                    InputResult.handled(SoundType.SILENT)
+                    if (onSnapDown()) InputResult.HANDLED else InputResult.UNHANDLED
                 }
             }
         }
@@ -793,9 +888,7 @@ class GameDetailViewModel @Inject constructor(
                     return InputResult.UNHANDLED
                 }
                 else -> {
-                    gameNavigationContext.getPreviousGameId(currentGameId)?.let { prevId ->
-                        loadGame(prevId)
-                    }
+                    onSectionLeft()
                     return InputResult.HANDLED
                 }
             }
@@ -812,12 +905,30 @@ class GameDetailViewModel @Inject constructor(
                     return InputResult.UNHANDLED
                 }
                 else -> {
-                    gameNavigationContext.getNextGameId(currentGameId)?.let { nextId ->
-                        loadGame(nextId)
-                    }
+                    onSectionRight()
                     return InputResult.HANDLED
                 }
             }
+        }
+
+        override fun onPrevSection(): InputResult {
+            val state = _uiState.value
+            if (state.showRatingPicker || state.showMoreOptions || state.showEmulatorPicker ||
+                state.showCorePicker || state.showDiscPicker || state.showMissingDiscPrompt) {
+                return InputResult.UNHANDLED
+            }
+            onPrevGame()
+            return InputResult.HANDLED
+        }
+
+        override fun onNextSection(): InputResult {
+            val state = _uiState.value
+            if (state.showRatingPicker || state.showMoreOptions || state.showEmulatorPicker ||
+                state.showCorePicker || state.showDiscPicker || state.showMissingDiscPrompt) {
+                return InputResult.UNHANDLED
+            }
+            onNextGame()
+            return InputResult.HANDLED
         }
 
         override fun onConfirm(): InputResult {

@@ -13,6 +13,7 @@ import com.nendo.argosy.data.local.entity.PlatformEntity
 import com.nendo.argosy.data.model.GameSource
 import com.nendo.argosy.data.preferences.UserPreferencesRepository
 import com.nendo.argosy.data.remote.romm.RomMRepository
+import com.nendo.argosy.data.remote.romm.RomMResult
 import com.nendo.argosy.domain.usecase.download.DownloadGameUseCase
 import com.nendo.argosy.domain.usecase.download.DownloadResult
 import com.nendo.argosy.domain.usecase.game.DeleteGameUseCase
@@ -86,6 +87,7 @@ data class HomeGameUi(
     val rating: Float? = null,
     val userRating: Int = 0,
     val userDifficulty: Int = 0,
+    val achievementCount: Int = 0,
     val downloadIndicator: GameDownloadIndicator = GameDownloadIndicator.NONE
 )
 
@@ -176,7 +178,8 @@ class HomeViewModel @Inject constructor(
     private val launchGameUseCase: LaunchGameUseCase,
     private val downloadManager: DownloadManager,
     private val soundManager: SoundFeedbackManager,
-    private val gameActions: GameActionsDelegate
+    private val gameActions: GameActionsDelegate,
+    private val achievementDao: com.nendo.argosy.data.local.dao.AchievementDao
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(restoreInitialState())
@@ -387,6 +390,7 @@ class HomeViewModel @Inject constructor(
                         )
                     }
                 }
+                prefetchAchievementsForFocusedGame()
             }
         }
     }
@@ -411,6 +415,7 @@ class HomeViewModel @Inject constructor(
             }
         } else {
             _uiState.update { it.copy(currentRow = nextRow, focusedGameIndex = savedIndex) }
+            prefetchAchievementsForFocusedGame()
         }
         saveCurrentState()
     }
@@ -435,6 +440,7 @@ class HomeViewModel @Inject constructor(
             }
         } else {
             _uiState.update { it.copy(currentRow = prevRow, focusedGameIndex = savedIndex) }
+            prefetchAchievementsForFocusedGame()
         }
         saveCurrentState()
     }
@@ -445,6 +451,7 @@ class HomeViewModel @Inject constructor(
         if (state.focusedGameIndex >= state.currentItems.size - 1) return false
         _uiState.update { it.copy(focusedGameIndex = state.focusedGameIndex + 1) }
         saveCurrentState()
+        prefetchAchievementsForFocusedGame()
         return true
     }
 
@@ -454,6 +461,7 @@ class HomeViewModel @Inject constructor(
         if (state.focusedGameIndex <= 0) return false
         _uiState.update { it.copy(focusedGameIndex = state.focusedGameIndex - 1) }
         saveCurrentState()
+        prefetchAchievementsForFocusedGame()
         return true
     }
 
@@ -638,7 +646,8 @@ class HomeViewModel @Inject constructor(
             isDownloaded = localPath != null || source == GameSource.STEAM,
             rating = rating,
             userRating = userRating,
-            userDifficulty = userDifficulty
+            userDifficulty = userDifficulty,
+            achievementCount = achievementCount
         )
     }
 
@@ -737,6 +746,66 @@ class HomeViewModel @Inject constructor(
             )
             onGameSelect(game.id)
             return InputResult.HANDLED
+        }
+    }
+
+    private var achievementFetchJob: kotlinx.coroutines.Job? = null
+
+    private fun prefetchAchievementsForFocusedGame() {
+        val game = _uiState.value.focusedGame ?: return
+        viewModelScope.launch {
+            val entity = gameDao.getById(game.id) ?: return@launch
+            val rommId = entity.rommId ?: return@launch
+
+            achievementFetchJob?.cancel()
+            achievementFetchJob = viewModelScope.launch {
+                fetchAndCacheAchievements(rommId, game.id)
+            }
+        }
+    }
+
+    private suspend fun fetchAndCacheAchievements(rommId: Long, gameId: Long) {
+        when (val result = romMRepository.getRom(rommId)) {
+            is RomMResult.Success -> {
+                val apiAchievements = result.data.raMetadata?.achievements ?: return
+                if (apiAchievements.isNotEmpty()) {
+                    val entities = apiAchievements.map { achievement ->
+                        com.nendo.argosy.data.local.entity.AchievementEntity(
+                            gameId = gameId,
+                            raId = achievement.raId,
+                            title = achievement.title,
+                            description = achievement.description,
+                            points = achievement.points,
+                            type = achievement.type,
+                            badgeUrl = achievement.badgeUrl,
+                            badgeUrlLock = achievement.badgeUrlLock,
+                            isUnlocked = false
+                        )
+                    }
+                    achievementDao.replaceForGame(gameId, entities)
+                    gameDao.updateAchievementCount(gameId, entities.size)
+
+                    _uiState.update { state ->
+                        state.copy(
+                            recentGames = state.recentGames.map {
+                                if (it.id == gameId) it.copy(achievementCount = entities.size) else it
+                            },
+                            favoriteGames = state.favoriteGames.map {
+                                if (it.id == gameId) it.copy(achievementCount = entities.size) else it
+                            },
+                            platformItems = state.platformItems.map { item ->
+                                when (item) {
+                                    is HomeRowItem.Game -> if (item.game.id == gameId) {
+                                        HomeRowItem.Game(item.game.copy(achievementCount = entities.size))
+                                    } else item
+                                    is HomeRowItem.ViewAll -> item
+                                }
+                            }
+                        )
+                    }
+                }
+            }
+            is RomMResult.Error -> { }
         }
     }
 }

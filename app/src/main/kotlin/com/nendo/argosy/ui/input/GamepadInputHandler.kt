@@ -53,13 +53,12 @@ class GamepadInputHandler @Inject constructor(
 
     private var lastKeyTime = 0L
     private var lastKeyCode = 0
-    private val repeatInterval = 200L
+    private val repeatInterval = 120L
 
     fun handleKeyEvent(event: KeyEvent): Boolean {
         if (event.action != KeyEvent.ACTION_DOWN) return false
 
         val currentTime = System.currentTimeMillis()
-
         if (event.keyCode == lastKeyCode && event.repeatCount > 0) {
             val elapsed = currentTime - lastKeyTime
             if (elapsed < repeatInterval) return true

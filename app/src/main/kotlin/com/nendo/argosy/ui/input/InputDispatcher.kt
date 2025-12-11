@@ -75,28 +75,30 @@ class InputDispatcher(
         inputBlockedUntil = System.currentTimeMillis() + durationMs
     }
 
-    fun dispatch(event: GamepadEvent): Boolean {
+    fun dispatch(event: GamepadEvent): InputResult {
         if (System.currentTimeMillis() < inputBlockedUntil) {
-            return true
+            return InputResult.HANDLED
         }
 
         val handler = modalStack.lastOrNull() ?: drawerHandler ?: viewHandler
         if (handler == null) {
             pendingEvent = event
-            return false
+            return InputResult.UNHANDLED
         }
 
         pendingEvent = null
         val result = dispatchToHandler(event, handler)
         playFeedback(event, result)
-        return result.handled
+        return result
     }
 
     private fun playFeedback(event: GamepadEvent, result: InputResult) {
         when (event) {
             GamepadEvent.Up, GamepadEvent.Down, GamepadEvent.Left, GamepadEvent.Right -> {
                 if (result.handled) {
-                    hapticManager?.vibrate(HapticPattern.FOCUS_CHANGE)
+                    if (result.soundOverride != SoundType.SILENT) {
+                        hapticManager?.vibrate(HapticPattern.FOCUS_CHANGE)
+                    }
                     soundManager?.play(result.soundOverride ?: SoundType.NAVIGATE)
                 } else {
                     hapticManager?.vibrate(HapticPattern.BOUNDARY_HIT)
