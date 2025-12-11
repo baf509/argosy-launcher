@@ -112,6 +112,13 @@ object EmulatorRegistry {
             supportedPlatforms = setOf("gc", "ngc", "wii"),
             downloadUrl = "https://play.google.com/store/apps/details?id=org.dolphinemu.dolphinemu"
         ),
+        EmulatorDef(
+            id = "cemu",
+            packageName = "info.cemu.cemu",
+            displayName = "Cemu",
+            supportedPlatforms = setOf("wiiu"),
+            downloadUrl = "https://github.com/SSimco/Cemu/releases"
+        ),
         // NOTE: Original Citra is discontinued - most users should use Lime3DS or Azahar
         EmulatorDef(
             id = "citra",
@@ -391,6 +398,7 @@ object EmulatorRegistry {
         "gc" to listOf("dolphin", "retroarch", "retroarch_64"),
         "ngc" to listOf("dolphin", "retroarch", "retroarch_64"),
         "wii" to listOf("dolphin"),
+        "wiiu" to listOf("cemu"),
         "switch" to listOf("citron", "ryujinx", "yuzu", "strato", "eden", "skyline"),
         "gba" to listOf("pizza_boy_gba", "retroarch", "retroarch_64"),
         "gb" to listOf("pizza_boy_gb", "retroarch", "retroarch_64"),

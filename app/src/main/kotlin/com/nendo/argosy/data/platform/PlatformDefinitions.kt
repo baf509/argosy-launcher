@@ -24,6 +24,7 @@ object PlatformDefinitions {
         PlatformDef("nds", "Nintendo DS", "NDS", setOf("nds", "dsi"), 9),
         PlatformDef("3ds", "Nintendo 3DS", "3DS", setOf("3ds", "cia", "cxi", "app"), 10),
         PlatformDef("switch", "Nintendo Switch", "Switch", setOf("nsp", "xci", "nsz", "xcz"), 11),
+        PlatformDef("wiiu", "Nintendo Wii U", "Wii U", setOf("wud", "wux", "rpx", "wua"), 12),
 
         PlatformDef("sms", "Sega Master System", "SMS", setOf("sms", "sg"), 20),
         PlatformDef("genesis", "Sega Genesis", "Genesis", setOf("md", "gen", "smd", "bin"), 21),
