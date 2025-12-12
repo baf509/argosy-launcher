@@ -1,6 +1,7 @@
 package com.nendo.argosy.ui.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -13,8 +14,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.unit.dp
+import androidx.core.graphics.ColorUtils
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material3.Icon
@@ -432,4 +437,93 @@ fun ColorPickerPreference(
             }
         }
     }
+}
+
+@Composable
+fun HueSliderPreference(
+    title: String,
+    currentHue: Float?,
+    isFocused: Boolean,
+    onHueChange: (Float?) -> Unit,
+    saturation: Float = 0.7f,
+    lightness: Float = 0.5f
+) {
+    val hueSteps = 36
+    val hueColors = (0..hueSteps).map { step ->
+        val hue = (step * 360f / hueSteps)
+        Color(ColorUtils.HSLToColor(floatArrayOf(hue, saturation, lightness)))
+    }
+
+    val currentColor = currentHue?.let {
+        Color(ColorUtils.HSLToColor(floatArrayOf(it, saturation, lightness)))
+    }
+
+    Column(
+        modifier = preferenceModifier(isFocused)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                color = preferenceContentColor(isFocused)
+            )
+            if (currentColor != null) {
+                Box(
+                    modifier = Modifier
+                        .size(24.dp)
+                        .clip(CircleShape)
+                        .background(currentColor)
+                        .border(2.dp, MaterialTheme.colorScheme.outline, CircleShape)
+                )
+            } else {
+                Text(
+                    text = "Default",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = preferenceSecondaryColor(isFocused)
+                )
+            }
+        }
+        Spacer(modifier = Modifier.padding(top = Dimens.spacingSm))
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(32.dp)
+                .clip(RoundedCornerShape(Dimens.radiusSm))
+                .background(
+                    Brush.horizontalGradient(hueColors)
+                )
+                .clickable { }
+        ) {
+            if (currentHue != null) {
+                val position = currentHue / 360f
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(position)
+                        .align(Alignment.CenterStart)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.CenterEnd)
+                            .size(16.dp, 32.dp)
+                            .background(Color.White, RoundedCornerShape(4.dp))
+                            .border(2.dp, Color.Black.copy(alpha = 0.3f), RoundedCornerShape(4.dp))
+                    )
+                }
+            }
+        }
+    }
+}
+
+fun hueToColorInt(hue: Float, saturation: Float = 0.7f, lightness: Float = 0.5f): Int {
+    return ColorUtils.HSLToColor(floatArrayOf(hue, saturation, lightness))
+}
+
+fun colorIntToHue(colorInt: Int): Float {
+    val hsl = FloatArray(3)
+    ColorUtils.colorToHSL(colorInt, hsl)
+    return hsl[0]
 }

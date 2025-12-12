@@ -130,7 +130,12 @@ data class DisplayState(
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val primaryColor: Int? = null,
     val animationSpeed: AnimationSpeed = AnimationSpeed.NORMAL,
-    val uiDensity: UiDensity = UiDensity.NORMAL
+    val uiDensity: UiDensity = UiDensity.NORMAL,
+    val backgroundBlur: Int = 0,
+    val backgroundSaturation: Int = 100,
+    val backgroundOpacity: Int = 100,
+    val useGameBackground: Boolean = true,
+    val customBackgroundPath: String? = null
 )
 
 data class ControlsState(
@@ -375,7 +380,12 @@ class SettingsViewModel @Inject constructor(
                         themeMode = prefs.themeMode,
                         primaryColor = prefs.primaryColor,
                         animationSpeed = prefs.animationSpeed,
-                        uiDensity = prefs.uiDensity
+                        uiDensity = prefs.uiDensity,
+                        backgroundBlur = prefs.backgroundBlur,
+                        backgroundSaturation = prefs.backgroundSaturation,
+                        backgroundOpacity = prefs.backgroundOpacity,
+                        useGameBackground = prefs.useGameBackground,
+                        customBackgroundPath = prefs.customBackgroundPath
                     ),
                     controls = state.controls.copy(
                         hapticEnabled = prefs.hapticEnabled,
@@ -891,7 +901,7 @@ class SettingsViewModel @Inject constructor(
                 SettingsSection.SYNC_FILTERS -> 6
                 SettingsSection.STEAM_SETTINGS -> 2 + state.steam.installedLaunchers.size
                 SettingsSection.STORAGE -> 2
-                SettingsSection.DISPLAY -> 3
+                SettingsSection.DISPLAY -> if (state.display.useGameBackground) 7 else 8
                 SettingsSection.CONTROLS -> if (state.controls.hapticEnabled) 4 else 3
                 SettingsSection.SOUNDS -> if (state.sounds.enabled) 1 + SoundType.entries.size else 0
                 SettingsSection.EMULATORS -> {
@@ -939,6 +949,24 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    fun adjustHue(delta: Float) {
+        val currentColor = _uiState.value.display.primaryColor
+        val currentHue = if (currentColor != null) {
+            val hsl = FloatArray(3)
+            androidx.core.graphics.ColorUtils.colorToHSL(currentColor, hsl)
+            hsl[0]
+        } else {
+            180f
+        }
+        val newHue = (currentHue + delta).mod(360f)
+        val newColor = androidx.core.graphics.ColorUtils.HSLToColor(floatArrayOf(newHue, 0.7f, 0.5f))
+        setPrimaryColor(newColor)
+    }
+
+    fun resetToDefaultColor() {
+        setPrimaryColor(null)
+    }
+
     fun setAnimationSpeed(speed: AnimationSpeed) {
         viewModelScope.launch {
             preferencesRepository.setAnimationSpeed(speed)
@@ -950,6 +978,59 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             preferencesRepository.setUiDensity(density)
             _uiState.update { it.copy(display = it.display.copy(uiDensity = density)) }
+        }
+    }
+
+    fun adjustBackgroundBlur(delta: Int) {
+        val current = _uiState.value.display.backgroundBlur
+        val newValue = (current + delta).coerceIn(0, 100)
+        if (newValue != current) {
+            viewModelScope.launch {
+                preferencesRepository.setBackgroundBlur(newValue)
+                _uiState.update { it.copy(display = it.display.copy(backgroundBlur = newValue)) }
+            }
+        }
+    }
+
+    fun adjustBackgroundSaturation(delta: Int) {
+        val current = _uiState.value.display.backgroundSaturation
+        val newValue = (current + delta).coerceIn(0, 100)
+        if (newValue != current) {
+            viewModelScope.launch {
+                preferencesRepository.setBackgroundSaturation(newValue)
+                _uiState.update { it.copy(display = it.display.copy(backgroundSaturation = newValue)) }
+            }
+        }
+    }
+
+    fun adjustBackgroundOpacity(delta: Int) {
+        val current = _uiState.value.display.backgroundOpacity
+        val newValue = (current + delta).coerceIn(0, 100)
+        if (newValue != current) {
+            viewModelScope.launch {
+                preferencesRepository.setBackgroundOpacity(newValue)
+                _uiState.update { it.copy(display = it.display.copy(backgroundOpacity = newValue)) }
+            }
+        }
+    }
+
+    fun setUseGameBackground(use: Boolean) {
+        viewModelScope.launch {
+            preferencesRepository.setUseGameBackground(use)
+            _uiState.update { it.copy(display = it.display.copy(useGameBackground = use)) }
+        }
+    }
+
+    fun setCustomBackgroundPath(path: String?) {
+        viewModelScope.launch {
+            preferencesRepository.setCustomBackgroundPath(path)
+            _uiState.update { it.copy(display = it.display.copy(customBackgroundPath = path)) }
+        }
+    }
+
+    fun openBackgroundPicker() {
+        viewModelScope.launch {
+            _openBackgroundPickerEvent.emit(Unit)
         }
     }
 
@@ -1111,6 +1192,9 @@ class SettingsViewModel @Inject constructor(
 
     private val _openCustomSoundPickerEvent = MutableSharedFlow<SoundType>()
     val openCustomSoundPickerEvent: SharedFlow<SoundType> = _openCustomSoundPickerEvent.asSharedFlow()
+
+    private val _openBackgroundPickerEvent = MutableSharedFlow<Unit>()
+    val openBackgroundPickerEvent: SharedFlow<Unit> = _openBackgroundPickerEvent.asSharedFlow()
 
     fun setSwapAB(enabled: Boolean) {
         viewModelScope.launch {
@@ -1772,6 +1856,15 @@ class SettingsViewModel @Inject constructor(
                         }
                         setUiDensity(next)
                     }
+                    4 -> {
+                        setUseGameBackground(!state.display.useGameBackground)
+                        return InputResult.handled(SoundType.TOGGLE)
+                    }
+                    5 -> {
+                        if (!state.display.useGameBackground) {
+                            viewModelScope.launch { _openBackgroundPickerEvent.emit(Unit) }
+                        }
+                    }
                 }
                 InputResult.HANDLED
             }
@@ -1851,9 +1944,14 @@ class SettingsViewModel @Inject constructor(
 
         override fun onLeft(): InputResult {
             val state = _uiState.value
-            if (state.currentSection == SettingsSection.DISPLAY && state.focusedIndex == 1) {
-                moveColorFocus(-1)
-                return InputResult.HANDLED
+            if (state.currentSection == SettingsSection.DISPLAY) {
+                val sliderOffset = if (state.display.useGameBackground) 0 else 1
+                when (state.focusedIndex) {
+                    1 -> { adjustHue(-10f); return InputResult.HANDLED }
+                    5 + sliderOffset -> { adjustBackgroundBlur(-10); return InputResult.HANDLED }
+                    6 + sliderOffset -> { adjustBackgroundSaturation(-10); return InputResult.HANDLED }
+                    7 + sliderOffset -> { adjustBackgroundOpacity(-10); return InputResult.HANDLED }
+                }
             }
             if (state.currentSection == SettingsSection.STORAGE && state.focusedIndex == 1) {
                 adjustMaxConcurrentDownloads(-1)
@@ -1888,9 +1986,14 @@ class SettingsViewModel @Inject constructor(
 
         override fun onRight(): InputResult {
             val state = _uiState.value
-            if (state.currentSection == SettingsSection.DISPLAY && state.focusedIndex == 1) {
-                moveColorFocus(1)
-                return InputResult.HANDLED
+            if (state.currentSection == SettingsSection.DISPLAY) {
+                val sliderOffset = if (state.display.useGameBackground) 0 else 1
+                when (state.focusedIndex) {
+                    1 -> { adjustHue(10f); return InputResult.HANDLED }
+                    5 + sliderOffset -> { adjustBackgroundBlur(10); return InputResult.HANDLED }
+                    6 + sliderOffset -> { adjustBackgroundSaturation(10); return InputResult.HANDLED }
+                    7 + sliderOffset -> { adjustBackgroundOpacity(10); return InputResult.HANDLED }
+                }
             }
             if (state.currentSection == SettingsSection.STORAGE && state.focusedIndex == 1) {
                 adjustMaxConcurrentDownloads(1)
@@ -1938,7 +2041,7 @@ class SettingsViewModel @Inject constructor(
                 return InputResult.HANDLED
             }
             if (state.currentSection == SettingsSection.DISPLAY && state.focusedIndex == 1) {
-                selectFocusedColor()
+                resetToDefaultColor()
                 return InputResult.HANDLED
             }
             return handleConfirm()

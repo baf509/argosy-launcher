@@ -164,10 +164,22 @@ fun HomeScreen(
         label = "modalBlur"
     )
 
+    val backgroundBlurDp = (uiState.backgroundBlur * 0.5f).dp
+    val saturationFraction = uiState.backgroundSaturation / 100f
+    val opacityFraction = uiState.backgroundOpacity / 100f
+    val overlayAlphaTop = 0.3f + (1f - opacityFraction) * 0.4f
+    val overlayAlphaBottom = 0.7f + (1f - opacityFraction) * 0.3f
+
+    val effectiveBackgroundPath = if (uiState.useGameBackground) {
+        uiState.focusedGame?.backgroundPath
+    } else {
+        uiState.customBackgroundPath
+    }
+
     Box(modifier = Modifier.fillMaxSize()) {
         Box(modifier = Modifier.fillMaxSize().blur(modalBlur)) {
             AnimatedContent(
-            targetState = uiState.focusedGame?.backgroundPath,
+            targetState = effectiveBackgroundPath,
             transitionSpec = {
                 fadeIn(tween(300)) togetherWith fadeOut(tween(300))
             },
@@ -187,9 +199,14 @@ fun HomeScreen(
                         .build(),
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
+                    colorFilter = androidx.compose.ui.graphics.ColorFilter.colorMatrix(
+                        androidx.compose.ui.graphics.ColorMatrix().apply {
+                            setToSaturation(saturationFraction)
+                        }
+                    ),
                     modifier = Modifier
                         .fillMaxSize()
-                        .blur(32.dp)
+                        .blur(backgroundBlurDp)
                 )
             }
             Box(
@@ -198,8 +215,8 @@ fun HomeScreen(
                     .background(
                         Brush.verticalGradient(
                             colors = listOf(
-                                Color.Black.copy(alpha = 0.3f),
-                                Color.Black.copy(alpha = 0.7f)
+                                Color.Black.copy(alpha = overlayAlphaTop),
+                                Color.Black.copy(alpha = overlayAlphaBottom)
                             )
                         )
                     )

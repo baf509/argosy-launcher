@@ -127,7 +127,12 @@ data class HomeUiState(
     val isRommConfigured: Boolean = false,
     val showGameMenu: Boolean = false,
     val gameMenuFocusIndex: Int = 0,
-    val downloadIndicators: Map<Long, GameDownloadIndicator> = emptyMap()
+    val downloadIndicators: Map<Long, GameDownloadIndicator> = emptyMap(),
+    val backgroundBlur: Int = 0,
+    val backgroundSaturation: Int = 100,
+    val backgroundOpacity: Int = 100,
+    val useGameBackground: Boolean = true,
+    val customBackgroundPath: String? = null
 ) {
     val availableRows: List<HomeRow>
         get() = buildList {
@@ -201,6 +206,23 @@ class HomeViewModel @Inject constructor(
     init {
         loadData()
         initializeRomM()
+        observeBackgroundSettings()
+    }
+
+    private fun observeBackgroundSettings() {
+        viewModelScope.launch {
+            preferencesRepository.preferences.collect { prefs ->
+                _uiState.update {
+                    it.copy(
+                        backgroundBlur = prefs.backgroundBlur,
+                        backgroundSaturation = prefs.backgroundSaturation,
+                        backgroundOpacity = prefs.backgroundOpacity,
+                        useGameBackground = prefs.useGameBackground,
+                        customBackgroundPath = prefs.customBackgroundPath
+                    )
+                }
+            }
+        }
     }
 
     private fun restoreInitialState(): HomeUiState {

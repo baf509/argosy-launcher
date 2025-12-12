@@ -96,8 +96,10 @@ import com.nendo.argosy.data.preferences.SyncFilterPreferences
 import com.nendo.argosy.data.preferences.ThemeMode
 import com.nendo.argosy.data.preferences.UiDensity
 import com.nendo.argosy.ui.components.ActionPreference
-import com.nendo.argosy.ui.components.ColorPickerPreference
 import com.nendo.argosy.ui.components.CyclePreference
+import com.nendo.argosy.ui.components.HueSliderPreference
+import com.nendo.argosy.ui.components.colorIntToHue
+import com.nendo.argosy.ui.components.hueToColorInt
 import com.nendo.argosy.ui.components.FooterBar
 import com.nendo.argosy.ui.components.InputButton
 import com.nendo.argosy.ui.components.InfoPreference
@@ -136,6 +138,22 @@ fun SettingsScreen(
             if (filePath != null) {
                 viewModel.setStoragePath(filePath)
             }
+        }
+    }
+
+    val backgroundPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        uri?.let {
+            try {
+                context.contentResolver.takePersistableUriPermission(
+                    it,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            } catch (_: SecurityException) {
+                // Ignore if permission can't be persisted
+            }
+            viewModel.setCustomBackgroundPath(it.toString())
         }
     }
 
@@ -186,6 +204,12 @@ fun SettingsScreen(
                 }
                 context.startActivity(intent)
             }
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        viewModel.openBackgroundPickerEvent.collect {
+            backgroundPickerLauncher.launch(arrayOf("image/*"))
         }
     }
 
@@ -419,18 +443,11 @@ private fun MainSettingsSection(uiState: SettingsUiState, viewModel: SettingsVie
 @Composable
 private fun DisplaySection(uiState: SettingsUiState, viewModel: SettingsViewModel) {
     val listState = rememberLazyListState()
-    val presetColors = listOf(
-        null to "Default",
-        0xFF9575CD.toInt() to "Violet",
-        0xFF4DB6AC.toInt() to "Teal",
-        0xFFFFB74D.toInt() to "Amber",
-        0xFF81C784.toInt() to "Green",
-        0xFFF06292.toInt() to "Rose",
-        0xFF64B5F6.toInt() to "Blue"
-    )
+    val currentHue = uiState.display.primaryColor?.let { colorIntToHue(it) }
+    val maxIndex = if (uiState.display.useGameBackground) 7 else 8
 
     LaunchedEffect(uiState.focusedIndex) {
-        if (uiState.focusedIndex in 0..3) {
+        if (uiState.focusedIndex in 0..maxIndex) {
             val viewportHeight = listState.layoutInfo.viewportSize.height
             val itemHeight = listState.layoutInfo.visibleItemsInfo.firstOrNull()?.size ?: 0
             val centerOffset = if (itemHeight > 0) (viewportHeight - itemHeight) / 2 else 0
@@ -444,6 +461,9 @@ private fun DisplaySection(uiState: SettingsUiState, viewModel: SettingsViewMode
         modifier = Modifier.fillMaxSize().padding(Dimens.spacingMd),
         verticalArrangement = Arrangement.spacedBy(Dimens.spacingSm)
     ) {
+        item {
+            DisplaySectionHeader("Appearance")
+        }
         item {
             CyclePreference(
                 title = "Theme",
@@ -460,19 +480,16 @@ private fun DisplaySection(uiState: SettingsUiState, viewModel: SettingsViewMode
             )
         }
         item {
-            ColorPickerPreference(
+            HueSliderPreference(
                 title = "Accent Color",
-                presetColors = presetColors,
-                currentColor = uiState.display.primaryColor,
+                currentHue = currentHue,
                 isFocused = uiState.focusedIndex == 1,
-                focusedColorIndex = uiState.colorFocusIndex,
-                onColorSelect = { viewModel.setPrimaryColor(it) },
-                colorCircleContent = { color, isSelected, isColorFocused ->
-                    ColorCircle(
-                        color = color,
-                        isSelected = isSelected,
-                        isFocused = isColorFocused
-                    )
+                onHueChange = { hue ->
+                    if (hue != null) {
+                        viewModel.setPrimaryColor(hueToColorInt(hue))
+                    } else {
+                        viewModel.resetToDefaultColor()
+                    }
                 }
             )
         }
@@ -507,7 +524,73 @@ private fun DisplaySection(uiState: SettingsUiState, viewModel: SettingsViewMode
                 }
             )
         }
+        item {
+            DisplaySectionHeader("Background")
+        }
+        item {
+            SwitchPreference(
+                title = "Game Artwork",
+                subtitle = "Use game cover as background",
+                isEnabled = uiState.display.useGameBackground,
+                isFocused = uiState.focusedIndex == 4,
+                onToggle = { viewModel.setUseGameBackground(it) }
+            )
+        }
+        if (!uiState.display.useGameBackground) {
+            item {
+                val subtitle = if (uiState.display.customBackgroundPath != null) {
+                    "Custom image selected"
+                } else {
+                    "No image selected"
+                }
+                ActionPreference(
+                    icon = Icons.Outlined.PhotoLibrary,
+                    title = "Custom Image",
+                    subtitle = subtitle,
+                    isFocused = uiState.focusedIndex == 5,
+                    onClick = { viewModel.openBackgroundPicker() }
+                )
+            }
+        }
+        val sliderOffset = if (uiState.display.useGameBackground) 0 else 1
+        item {
+            SliderPreference(
+                title = "Blur",
+                value = uiState.display.backgroundBlur / 10,
+                minValue = 0,
+                maxValue = 10,
+                isFocused = uiState.focusedIndex == 5 + sliderOffset
+            )
+        }
+        item {
+            SliderPreference(
+                title = "Saturation",
+                value = uiState.display.backgroundSaturation / 10,
+                minValue = 0,
+                maxValue = 10,
+                isFocused = uiState.focusedIndex == 6 + sliderOffset
+            )
+        }
+        item {
+            SliderPreference(
+                title = "Opacity",
+                value = uiState.display.backgroundOpacity / 10,
+                minValue = 0,
+                maxValue = 10,
+                isFocused = uiState.focusedIndex == 7 + sliderOffset
+            )
+        }
     }
+}
+
+@Composable
+private fun DisplaySectionHeader(title: String) {
+    Text(
+        text = title.uppercase(),
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.padding(vertical = Dimens.spacingXs)
+    )
 }
 
 @Composable

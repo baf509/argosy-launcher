@@ -58,6 +58,12 @@ class UserPreferencesRepository @Inject constructor(
         val SOUND_CONFIGS = stringPreferencesKey("sound_configs")
         val BETA_UPDATES_ENABLED = booleanPreferencesKey("beta_updates_enabled")
         val SAVE_SYNC_ENABLED = booleanPreferencesKey("save_sync_enabled")
+
+        val BACKGROUND_BLUR = intPreferencesKey("background_blur")
+        val BACKGROUND_SATURATION = intPreferencesKey("background_saturation")
+        val BACKGROUND_OPACITY = intPreferencesKey("background_opacity")
+        val USE_GAME_BACKGROUND = booleanPreferencesKey("use_game_background")
+        val CUSTOM_BACKGROUND_PATH = stringPreferencesKey("custom_background_path")
     }
 
     val userPreferences: Flow<UserPreferences> = dataStore.data.map { prefs ->
@@ -97,6 +103,11 @@ class UserPreferencesRepository @Inject constructor(
                 deleteOrphans = prefs[Keys.SYNC_FILTER_DELETE_ORPHANS] ?: true
             ),
             syncScreenshotsEnabled = prefs[Keys.SYNC_SCREENSHOTS_ENABLED] ?: false,
+            backgroundBlur = prefs[Keys.BACKGROUND_BLUR] ?: 0,
+            backgroundSaturation = prefs[Keys.BACKGROUND_SATURATION] ?: 100,
+            backgroundOpacity = prefs[Keys.BACKGROUND_OPACITY] ?: 100,
+            useGameBackground = prefs[Keys.USE_GAME_BACKGROUND] ?: true,
+            customBackgroundPath = prefs[Keys.CUSTOM_BACKGROUND_PATH],
             hiddenApps = prefs[Keys.HIDDEN_APPS]
                 ?.split(",")
                 ?.filter { it.isNotBlank() }
@@ -385,6 +396,37 @@ class UserPreferencesRepository @Inject constructor(
             prefs[Keys.SAVE_SYNC_ENABLED] = enabled
         }
     }
+
+    suspend fun setBackgroundBlur(blur: Int) {
+        dataStore.edit { prefs ->
+            prefs[Keys.BACKGROUND_BLUR] = blur.coerceIn(0, 100)
+        }
+    }
+
+    suspend fun setBackgroundSaturation(saturation: Int) {
+        dataStore.edit { prefs ->
+            prefs[Keys.BACKGROUND_SATURATION] = saturation.coerceIn(0, 100)
+        }
+    }
+
+    suspend fun setBackgroundOpacity(opacity: Int) {
+        dataStore.edit { prefs ->
+            prefs[Keys.BACKGROUND_OPACITY] = opacity.coerceIn(0, 100)
+        }
+    }
+
+    suspend fun setUseGameBackground(use: Boolean) {
+        dataStore.edit { prefs ->
+            prefs[Keys.USE_GAME_BACKGROUND] = use
+        }
+    }
+
+    suspend fun setCustomBackgroundPath(path: String?) {
+        dataStore.edit { prefs ->
+            if (path != null) prefs[Keys.CUSTOM_BACKGROUND_PATH] = path
+            else prefs.remove(Keys.CUSTOM_BACKGROUND_PATH)
+        }
+    }
 }
 
 data class UserPreferences(
@@ -416,7 +458,12 @@ data class UserPreferences(
     val uiDensity: UiDensity = UiDensity.NORMAL,
     val soundConfigs: Map<SoundType, SoundConfig> = emptyMap(),
     val betaUpdatesEnabled: Boolean = false,
-    val saveSyncEnabled: Boolean = false
+    val saveSyncEnabled: Boolean = false,
+    val backgroundBlur: Int = 0,
+    val backgroundSaturation: Int = 100,
+    val backgroundOpacity: Int = 100,
+    val useGameBackground: Boolean = true,
+    val customBackgroundPath: String? = null
 )
 
 enum class ThemeMode {
