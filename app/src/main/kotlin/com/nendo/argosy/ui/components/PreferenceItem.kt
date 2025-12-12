@@ -268,6 +268,7 @@ fun ActionPreference(
     iconTint: Color? = null,
     isDangerous: Boolean = false,
     isEnabled: Boolean = true,
+    trailingText: String? = null,
     onClick: () -> Unit
 ) {
     Row(
@@ -298,6 +299,15 @@ fun ActionPreference(
             Text(
                 text = subtitle,
                 style = MaterialTheme.typography.bodySmall,
+                color = if (isEnabled) preferenceSecondaryColor(isFocused)
+                        else preferenceSecondaryColor(isFocused).copy(alpha = 0.5f)
+            )
+        }
+        if (trailingText != null) {
+            Spacer(modifier = Modifier.width(Dimens.spacingMd))
+            Text(
+                text = trailingText,
+                style = MaterialTheme.typography.bodyMedium,
                 color = if (isEnabled) preferenceSecondaryColor(isFocused)
                         else preferenceSecondaryColor(isFocused).copy(alpha = 0.5f)
             )

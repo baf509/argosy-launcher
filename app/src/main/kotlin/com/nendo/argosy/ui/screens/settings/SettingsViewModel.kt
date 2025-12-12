@@ -178,7 +178,8 @@ data class StorageState(
     val romStoragePath: String = "",
     val downloadedGamesSize: Long = 0,
     val downloadedGamesCount: Int = 0,
-    val maxConcurrentDownloads: Int = 1
+    val maxConcurrentDownloads: Int = 1,
+    val availableSpace: Long = 0
 )
 
 data class ServerState(
@@ -366,6 +367,7 @@ class SettingsViewModel @Inject constructor(
 
             val downloadedSize = gameRepository.getDownloadedGamesSize()
             val downloadedCount = gameRepository.getDownloadedGamesCount()
+            val availableSpace = gameRepository.getAvailableStorageBytes()
 
             _uiState.update { state ->
                 state.copy(
@@ -406,7 +408,8 @@ class SettingsViewModel @Inject constructor(
                         romStoragePath = prefs.romStoragePath ?: "",
                         downloadedGamesSize = downloadedSize,
                         downloadedGamesCount = downloadedCount,
-                        maxConcurrentDownloads = prefs.maxConcurrentDownloads
+                        maxConcurrentDownloads = prefs.maxConcurrentDownloads,
+                        availableSpace = availableSpace
                     ),
                     syncSettings = state.syncSettings.copy(
                         syncFilters = prefs.syncFilters,

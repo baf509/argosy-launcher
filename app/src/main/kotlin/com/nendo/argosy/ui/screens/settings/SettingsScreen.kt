@@ -1466,11 +1466,13 @@ private fun StorageSection(uiState: SettingsUiState, viewModel: SettingsViewMode
         verticalArrangement = Arrangement.spacedBy(Dimens.spacingSm)
     ) {
         item {
+            val availableText = "${formatFileSize(uiState.storage.availableSpace)} free"
             ActionPreference(
                 icon = Icons.Default.Folder,
                 title = "Download Location",
                 subtitle = formatStoragePath(uiState.storage.romStoragePath),
                 isFocused = uiState.focusedIndex == 0,
+                trailingText = availableText,
                 onClick = { viewModel.openFolderPicker() }
             )
         }

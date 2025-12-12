@@ -182,6 +182,17 @@ class GameRepository @Inject constructor(
         gameDao.getGamesWithLocalPath().size
     }
 
+    suspend fun getAvailableStorageBytes(): Long = withContext(Dispatchers.IO) {
+        try {
+            val downloadDir = getDownloadDir()
+            downloadDir.mkdirs()
+            val stat = android.os.StatFs(downloadDir.absolutePath)
+            stat.availableBytes
+        } catch (_: Exception) {
+            0L
+        }
+    }
+
     suspend fun getGamesWithLocalPaths() = withContext(Dispatchers.IO) {
         gameDao.getGamesWithLocalPath()
     }
