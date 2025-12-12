@@ -1,6 +1,8 @@
 package com.nendo.argosy.ui.screens.common
 
 import com.nendo.argosy.data.local.dao.GameDao
+import com.nendo.argosy.data.remote.romm.RomMRepository
+import com.nendo.argosy.data.remote.romm.RomMResult
 import com.nendo.argosy.domain.usecase.download.DownloadGameUseCase
 import com.nendo.argosy.domain.usecase.download.DownloadResult
 import com.nendo.argosy.domain.usecase.game.DeleteGameUseCase
@@ -14,7 +16,8 @@ class GameActionsDelegate @Inject constructor(
     private val gameDao: GameDao,
     private val deleteGameUseCase: DeleteGameUseCase,
     private val downloadGameUseCase: DownloadGameUseCase,
-    private val soundManager: SoundFeedbackManager
+    private val soundManager: SoundFeedbackManager,
+    private val romMRepository: RomMRepository
 ) {
     suspend fun toggleFavorite(gameId: Long): Boolean? {
         val game = gameDao.getById(gameId) ?: return null
@@ -38,5 +41,9 @@ class GameActionsDelegate @Inject constructor(
 
     suspend fun repairMissingDiscs(gameId: Long): DownloadResult {
         return downloadGameUseCase.repairMissingDiscs(gameId)
+    }
+
+    suspend fun refreshGameData(gameId: Long): RomMResult<Unit> {
+        return romMRepository.refreshGameData(gameId)
     }
 }

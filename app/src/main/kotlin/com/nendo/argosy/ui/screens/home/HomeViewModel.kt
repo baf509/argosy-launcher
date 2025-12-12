@@ -86,6 +86,7 @@ data class HomeGameUi(
     val genre: String?,
     val isFavorite: Boolean,
     val isDownloaded: Boolean,
+    val isRommGame: Boolean = false,
     val rating: Float? = null,
     val userRating: Int = 0,
     val userDifficulty: Int = 0,
@@ -548,7 +549,11 @@ class HomeViewModel @Inject constructor(
 
     fun moveGameMenuFocus(delta: Int) {
         _uiState.update {
-            val maxIndex = if (it.focusedGame?.isDownloaded == true) MENU_INDEX_MAX_DOWNLOADED else MENU_INDEX_MAX_REMOTE
+            val game = it.focusedGame
+            val isDownloaded = game?.isDownloaded == true
+            val isRommGame = game?.isRommGame == true
+            var maxIndex = if (isDownloaded) MENU_INDEX_MAX_DOWNLOADED else MENU_INDEX_MAX_REMOTE
+            if (isRommGame) maxIndex++
             val newIndex = (it.gameMenuFocusIndex + delta).coerceIn(0, maxIndex)
             it.copy(gameMenuFocusIndex = newIndex)
         }
@@ -557,33 +562,37 @@ class HomeViewModel @Inject constructor(
     fun confirmGameMenuSelection(onGameSelect: (Long) -> Unit) {
         val state = _uiState.value
         val game = state.focusedGame ?: return
-        when (state.gameMenuFocusIndex) {
-            0 -> {
+        val index = state.gameMenuFocusIndex
+        val isRommGame = game.isRommGame
+        val isDownloaded = game.isDownloaded
+
+        var currentIdx = 0
+        val playIdx = currentIdx++
+        val favoriteIdx = currentIdx++
+        val detailsIdx = currentIdx++
+        val refreshIdx = if (isRommGame) currentIdx++ else -1
+        val deleteIdx = if (isDownloaded) currentIdx++ else -1
+        val hideIdx = currentIdx
+
+        when (index) {
+            playIdx -> {
                 toggleGameMenu()
-                if (game.isDownloaded) {
-                    launchGame(game.id)
-                } else {
-                    queueDownload(game.id)
-                }
+                if (isDownloaded) launchGame(game.id) else queueDownload(game.id)
             }
-            1 -> toggleFavorite(game.id)
-            2 -> {
+            favoriteIdx -> toggleFavorite(game.id)
+            detailsIdx -> {
                 toggleGameMenu()
                 gameNavigationContext.setContext(
                     state.currentItems.filterIsInstance<HomeRowItem.Game>().map { it.game.id }
                 )
                 onGameSelect(game.id)
             }
-            3 -> {
-                if (game.isDownloaded) {
-                    toggleGameMenu()
-                    deleteLocalFile(game.id)
-                } else {
-                    toggleGameMenu()
-                    hideGame(game.id)
-                }
+            refreshIdx -> refreshGameData(game.id)
+            deleteIdx -> {
+                toggleGameMenu()
+                deleteLocalFile(game.id)
             }
-            4 -> {
+            hideIdx -> {
                 toggleGameMenu()
                 hideGame(game.id)
             }
@@ -601,6 +610,21 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch {
             gameActions.hideGame(gameId)
             refreshCurrentRowInternal()
+        }
+    }
+
+    fun refreshGameData(gameId: Long) {
+        viewModelScope.launch {
+            when (val result = gameActions.refreshGameData(gameId)) {
+                is RomMResult.Success -> {
+                    notificationManager.showSuccess("Game data refreshed")
+                    refreshCurrentRowInternal()
+                }
+                is RomMResult.Error -> {
+                    notificationManager.showError(result.message)
+                }
+            }
+            toggleGameMenu()
         }
     }
 
@@ -764,6 +788,7 @@ class HomeViewModel @Inject constructor(
             genre = genre,
             isFavorite = isFavorite,
             isDownloaded = localPath != null || source == GameSource.STEAM,
+            isRommGame = rommId != null,
             rating = rating,
             userRating = userRating,
             userDifficulty = userDifficulty,

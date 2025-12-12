@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Star
@@ -1010,6 +1011,11 @@ private fun MoreOptionsOverlay(
                 )
             }
             if (isRommGame) {
+                OptionItem(
+                    icon = Icons.Default.Refresh,
+                    label = "Refresh Game Data",
+                    isFocused = focusIndex == currentIndex++
+                )
                 OptionItem(
                     icon = Icons.Default.Star,
                     label = "Rate Game",

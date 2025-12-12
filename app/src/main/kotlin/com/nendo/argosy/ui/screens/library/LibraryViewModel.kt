@@ -15,6 +15,7 @@ import com.nendo.argosy.data.local.entity.GameEntity
 import com.nendo.argosy.data.local.entity.PlatformEntity
 import com.nendo.argosy.data.model.GameSource
 import com.nendo.argosy.data.preferences.UiDensity
+import com.nendo.argosy.data.remote.romm.RomMResult
 import com.nendo.argosy.data.preferences.UserPreferencesRepository
 import com.nendo.argosy.data.emulator.LaunchResult
 import com.nendo.argosy.domain.usecase.download.DownloadGameUseCase
@@ -109,6 +110,7 @@ data class LibraryGameUi(
     val source: GameSource,
     val isFavorite: Boolean,
     val isDownloaded: Boolean,
+    val isRommGame: Boolean,
     val emulatorName: String?
 ) {
     val sourceIcon: ImageVector?
@@ -538,7 +540,11 @@ class LibraryViewModel @Inject constructor(
 
     fun moveQuickMenuFocus(delta: Int) {
         _uiState.update {
-            val maxIndex = if (it.focusedGame?.isDownloaded == true) 4 else 3
+            val game = it.focusedGame
+            val isDownloaded = game?.isDownloaded == true
+            val isRommGame = game?.isRommGame == true
+            var maxIndex = if (isDownloaded) 4 else 3
+            if (isRommGame) maxIndex++
             val newIndex = (it.quickMenuFocusIndex + delta).coerceIn(0, maxIndex)
             it.copy(quickMenuFocusIndex = newIndex)
         }
@@ -546,37 +552,45 @@ class LibraryViewModel @Inject constructor(
 
     fun confirmQuickMenuSelection(onGameSelect: (Long) -> Unit): InputResult {
         val game = _uiState.value.focusedGame ?: return InputResult.HANDLED
-        return when (_uiState.value.quickMenuFocusIndex) {
-            0 -> {
-                if (game.isDownloaded) {
-                    launchGame(game.id)
-                } else {
-                    downloadGame(game.id)
-                }
+        val index = _uiState.value.quickMenuFocusIndex
+        val isRommGame = game.isRommGame
+        val isDownloaded = game.isDownloaded
+
+        var currentIdx = 0
+        val playIdx = currentIdx++
+        val favoriteIdx = currentIdx++
+        val detailsIdx = currentIdx++
+        val refreshIdx = if (isRommGame) currentIdx++ else -1
+        val deleteIdx = if (isDownloaded) currentIdx++ else -1
+        val hideIdx = currentIdx
+
+        return when (index) {
+            playIdx -> {
+                if (isDownloaded) launchGame(game.id) else downloadGame(game.id)
                 toggleQuickMenu()
                 InputResult.HANDLED
             }
-            1 -> {
+            favoriteIdx -> {
                 val sound = if (game.isFavorite) SoundType.UNFAVORITE else SoundType.FAVORITE
                 toggleFavorite(game.id)
                 InputResult.handled(sound)
             }
-            2 -> {
+            detailsIdx -> {
                 gameNavigationContext.setContext(_uiState.value.games.map { it.id })
                 onGameSelect(game.id)
                 toggleQuickMenu()
                 InputResult.HANDLED
             }
-            3 -> {
-                if (game.isDownloaded) {
-                    deleteLocalFile(game.id)
-                } else {
-                    hideGame(game.id)
-                }
+            refreshIdx -> {
+                refreshGameData(game.id)
+                InputResult.HANDLED
+            }
+            deleteIdx -> {
+                deleteLocalFile(game.id)
                 toggleQuickMenu()
                 InputResult.HANDLED
             }
-            4 -> {
+            hideIdx -> {
                 hideGame(game.id)
                 toggleQuickMenu()
                 InputResult.HANDLED
@@ -588,6 +602,21 @@ class LibraryViewModel @Inject constructor(
     fun hideGame(gameId: Long) {
         viewModelScope.launch {
             gameActions.hideGame(gameId)
+        }
+    }
+
+    fun refreshGameData(gameId: Long) {
+        viewModelScope.launch {
+            when (val result = gameActions.refreshGameData(gameId)) {
+                is RomMResult.Success -> {
+                    notificationManager.showSuccess("Game data refreshed")
+                    loadGames()
+                }
+                is RomMResult.Error -> {
+                    notificationManager.showError(result.message)
+                }
+            }
+            toggleQuickMenu()
         }
     }
 
@@ -661,6 +690,7 @@ class LibraryViewModel @Inject constructor(
         source = source,
         isFavorite = isFavorite,
         isDownloaded = localPath != null || source == GameSource.STEAM,
+        isRommGame = rommId != null,
         emulatorName = null
     )
 

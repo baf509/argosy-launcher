@@ -40,6 +40,7 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Star
@@ -317,6 +318,7 @@ fun HomeScreen(
                         viewModel.toggleGameMenu()
                         onGameSelect(focusedGame.id)
                     },
+                    onRefresh = { viewModel.refreshGameData(focusedGame.id) },
                     onDelete = {
                         viewModel.toggleGameMenu()
                         viewModel.deleteLocalFile(focusedGame.id)
@@ -705,9 +707,18 @@ private fun GameSelectOverlay(
     onPlayOrDownload: () -> Unit,
     onFavorite: () -> Unit,
     onDetails: () -> Unit,
+    onRefresh: () -> Unit,
     onDelete: () -> Unit,
     onHide: () -> Unit
 ) {
+    var currentIndex = 0
+    val playIdx = currentIndex++
+    val favoriteIdx = currentIndex++
+    val detailsIdx = currentIndex++
+    val refreshIdx = if (game.isRommGame) currentIndex++ else -1
+    val deleteIdx = if (game.isDownloaded) currentIndex++ else -1
+    val hideIdx = currentIndex
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -730,33 +741,41 @@ private fun GameSelectOverlay(
             MenuOption(
                 icon = if (game.isDownloaded) Icons.Default.PlayArrow else Icons.Default.Download,
                 label = if (game.isDownloaded) "Play" else "Download",
-                isFocused = focusIndex == 0,
+                isFocused = focusIndex == playIdx,
                 onClick = onPlayOrDownload
             )
             MenuOption(
                 icon = if (game.isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
                 label = if (game.isFavorite) "Unfavorite" else "Favorite",
-                isFocused = focusIndex == 1,
+                isFocused = focusIndex == favoriteIdx,
                 onClick = onFavorite
             )
             MenuOption(
                 icon = Icons.Default.Info,
                 label = "Details",
-                isFocused = focusIndex == 2,
+                isFocused = focusIndex == detailsIdx,
                 onClick = onDetails
             )
+            if (game.isRommGame) {
+                MenuOption(
+                    icon = Icons.Default.Refresh,
+                    label = "Refresh Data",
+                    isFocused = focusIndex == refreshIdx,
+                    onClick = onRefresh
+                )
+            }
             if (game.isDownloaded) {
                 MenuOption(
                     icon = Icons.Default.DeleteOutline,
                     label = "Delete Download",
-                    isFocused = focusIndex == 3,
+                    isFocused = focusIndex == deleteIdx,
                     isDangerous = true,
                     onClick = onDelete
                 )
             }
             MenuOption(
                 label = "Hide",
-                isFocused = focusIndex == if (game.isDownloaded) 4 else 3,
+                isFocused = focusIndex == hideIdx,
                 isDangerous = true,
                 onClick = onHide
             )

@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -277,6 +278,7 @@ fun LibraryScreen(
                         viewModel.toggleQuickMenu()
                         onGameSelect(game.id)
                     },
+                    onRefresh = { viewModel.refreshGameData(game.id) },
                     onDelete = {
                         viewModel.toggleQuickMenu()
                         viewModel.deleteLocalFile(game.id)
@@ -600,9 +602,18 @@ private fun QuickMenuOverlay(
     onPlayOrDownload: () -> Unit,
     onFavorite: () -> Unit,
     onDetails: () -> Unit,
+    onRefresh: () -> Unit,
     onDelete: () -> Unit,
     onHide: () -> Unit
 ) {
+    var currentIndex = 0
+    val playIdx = currentIndex++
+    val favoriteIdx = currentIndex++
+    val detailsIdx = currentIndex++
+    val refreshIdx = if (game.isRommGame) currentIndex++ else -1
+    val deleteIdx = if (game.isDownloaded) currentIndex++ else -1
+    val hideIdx = currentIndex
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -628,33 +639,41 @@ private fun QuickMenuOverlay(
             QuickMenuItem(
                 icon = if (game.isDownloaded) Icons.Default.PlayArrow else Icons.Default.Download,
                 label = if (game.isDownloaded) "Play" else "Download",
-                isFocused = focusIndex == 0,
+                isFocused = focusIndex == playIdx,
                 onClick = onPlayOrDownload
             )
             QuickMenuItem(
                 icon = if (game.isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
                 label = if (game.isFavorite) "Unfavorite" else "Favorite",
-                isFocused = focusIndex == 1,
+                isFocused = focusIndex == favoriteIdx,
                 onClick = onFavorite
             )
             QuickMenuItem(
                 icon = Icons.Default.Info,
                 label = "Details",
-                isFocused = focusIndex == 2,
+                isFocused = focusIndex == detailsIdx,
                 onClick = onDetails
             )
+            if (game.isRommGame) {
+                QuickMenuItem(
+                    icon = Icons.Default.Refresh,
+                    label = "Refresh Data",
+                    isFocused = focusIndex == refreshIdx,
+                    onClick = onRefresh
+                )
+            }
             if (game.isDownloaded) {
                 QuickMenuItem(
                     icon = Icons.Default.DeleteOutline,
                     label = "Delete Download",
-                    isFocused = focusIndex == 3,
+                    isFocused = focusIndex == deleteIdx,
                     isDangerous = true,
                     onClick = onDelete
                 )
             }
             QuickMenuItem(
                 label = "Hide",
-                isFocused = focusIndex == if (game.isDownloaded) 4 else 3,
+                isFocused = focusIndex == hideIdx,
                 isDangerous = true,
                 onClick = onHide
             )

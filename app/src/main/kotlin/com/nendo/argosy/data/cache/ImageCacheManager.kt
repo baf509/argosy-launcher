@@ -236,6 +236,18 @@ class ImageCacheManager @Inject constructor(
         cacheDir.listFiles()?.forEach { it.delete() }
     }
 
+    fun deleteGameImages(rommId: Long) {
+        scope.launch {
+            val prefixes = listOf("cover_${rommId}_", "bg_${rommId}_", "ss_${rommId}_")
+            cacheDir.listFiles()?.forEach { file ->
+                if (prefixes.any { prefix -> file.name.startsWith(prefix) }) {
+                    file.delete()
+                    Log.d(TAG, "Deleted cached image: ${file.name}")
+                }
+            }
+        }
+    }
+
     fun getCacheSize(): Long {
         return cacheDir.listFiles()?.sumOf { it.length() } ?: 0L
     }

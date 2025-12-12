@@ -819,6 +819,62 @@ class RomMRepository @Inject constructor(
         }
     }
 
+    suspend fun refreshGameData(gameId: Long): RomMResult<Unit> {
+        val currentApi = api ?: return RomMResult.Error("Not connected")
+        val game = gameDao.getById(gameId) ?: return RomMResult.Error("Game not found")
+        val rommId = game.rommId ?: return RomMResult.Error("Not a RomM game")
+
+        return try {
+            val response = currentApi.getRom(rommId)
+            if (!response.isSuccessful) {
+                return RomMResult.Error("Failed to fetch ROM data", response.code())
+            }
+
+            val rom = response.body() ?: return RomMResult.Error("Empty response")
+
+            imageCacheManager.deleteGameImages(rommId)
+
+            val screenshotUrls = rom.screenshotUrls.ifEmpty {
+                rom.screenshotPaths?.map { buildMediaUrl(it) } ?: emptyList()
+            }
+
+            val backgroundUrl = rom.backgroundUrls.firstOrNull()
+            val coverUrl = rom.coverLarge?.let { buildMediaUrl(it) }
+
+            if (backgroundUrl != null) {
+                imageCacheManager.queueBackgroundCache(backgroundUrl, rom.id, rom.name)
+            }
+            if (coverUrl != null) {
+                imageCacheManager.queueCoverCache(coverUrl, rom.id, rom.name)
+            }
+
+            val updatedGame = game.copy(
+                title = rom.name,
+                sortTitle = createSortTitle(rom.name),
+                coverPath = coverUrl,
+                backgroundPath = backgroundUrl,
+                screenshotPaths = screenshotUrls.joinToString(","),
+                description = rom.summary,
+                releaseYear = rom.firstReleaseDateMillis?.let {
+                    java.time.Instant.ofEpochMilli(it).atZone(java.time.ZoneOffset.UTC).year
+                },
+                genre = rom.genres?.firstOrNull(),
+                developer = rom.companies?.firstOrNull(),
+                rating = rom.metadatum?.averageRating,
+                regions = rom.regions?.joinToString(","),
+                languages = rom.languages?.joinToString(","),
+                gameModes = rom.metadatum?.gameModes?.joinToString(","),
+                franchises = rom.metadatum?.franchises?.joinToString(","),
+                achievementCount = rom.raMetadata?.achievements?.size ?: game.achievementCount
+            )
+
+            gameDao.update(updatedGame)
+            RomMResult.Success(Unit)
+        } catch (e: Exception) {
+            RomMResult.Error(e.message ?: "Failed to refresh game data")
+        }
+    }
+
     suspend fun getCurrentUser(): RomMResult<RomMUser> {
         val currentApi = api ?: return RomMResult.Error("Not connected")
         return try {

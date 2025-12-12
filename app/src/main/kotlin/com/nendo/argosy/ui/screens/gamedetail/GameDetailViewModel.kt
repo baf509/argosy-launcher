@@ -120,6 +120,7 @@ data class GameDetailUiState(
     val showMoreOptions: Boolean = false,
     val moreOptionsFocusIndex: Int = 0,
     val isLoading: Boolean = true,
+    val isRefreshingGameData: Boolean = false,
     val downloadStatus: GameDownloadStatus = GameDownloadStatus.NOT_DOWNLOADED,
     val downloadProgress: Float = 0f,
     val showEmulatorPicker: Boolean = false,
@@ -506,7 +507,7 @@ class GameDetailViewModel @Inject constructor(
             var optionCount = 2  // Base: Emulator + Hide
             if (isMultiDisc) optionCount++  // Select Disc
             if (isRetroArch) optionCount++  // Change Core
-            if (isRommGame) optionCount += 2  // Rate + Difficulty
+            if (isRommGame) optionCount += 3  // Refresh + Rate + Difficulty
             if (isDownloaded) optionCount++  // Delete
             val maxIndex = optionCount - 1
             val newIndex = (it.moreOptionsFocusIndex + delta).coerceIn(0, maxIndex)
@@ -526,6 +527,7 @@ class GameDetailViewModel @Inject constructor(
         val discIdx = if (isMultiDisc) currentIdx++ else -1
         val emulatorIdx = currentIdx++
         val coreIdx = if (isRetroArch) currentIdx++ else -1
+        val refreshIdx = if (isRommGame) currentIdx++ else -1
         val rateIdx = if (isRommGame) currentIdx++ else -1
         val difficultyIdx = if (isRommGame) currentIdx++ else -1
         val deleteIdx = if (isDownloaded) currentIdx++ else -1
@@ -535,6 +537,7 @@ class GameDetailViewModel @Inject constructor(
             discIdx -> showDiscPicker()
             emulatorIdx -> showEmulatorPicker()
             coreIdx -> showCorePicker()
+            refreshIdx -> refreshGameData()
             rateIdx -> showRatingPicker(RatingType.OPINION)
             difficultyIdx -> showRatingPicker(RatingType.DIFFICULTY)
             deleteIdx -> { toggleMoreOptions(); deleteLocalFile() }
@@ -765,6 +768,23 @@ class GameDetailViewModel @Inject constructor(
     fun hideGame() {
         viewModelScope.launch {
             gameActions.hideGame(currentGameId)
+        }
+    }
+
+    fun refreshGameData() {
+        if (_uiState.value.isRefreshingGameData) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isRefreshingGameData = true) }
+            when (val result = gameActions.refreshGameData(currentGameId)) {
+                is RomMResult.Success -> {
+                    notificationManager.showSuccess("Game data refreshed")
+                    loadGame(currentGameId)
+                }
+                is RomMResult.Error -> {
+                    notificationManager.showError(result.message)
+                }
+            }
+            _uiState.update { it.copy(isRefreshingGameData = false, showMoreOptions = false) }
         }
     }
 
