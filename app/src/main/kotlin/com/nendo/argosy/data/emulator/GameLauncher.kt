@@ -372,10 +372,10 @@ class GameLauncher @Inject constructor(
         romFile: File,
         config: LaunchConfig.Vita3K
     ): Intent {
-        val titleId = extractVitaTitleId(romFile.nameWithoutExtension)
+        val titleId = extractVitaTitleId(romFile)
 
         return Intent(emulator.launchAction).apply {
-            component = ComponentName(emulator.packageName, "${emulator.packageName}.${config.activityClass.substringAfterLast('.')}")
+            component = ComponentName(emulator.packageName, config.activityClass)
 
             if (titleId != null) {
                 Log.d(TAG, "Vita3K: Launching with title ID: $titleId")
@@ -391,14 +391,36 @@ class GameLauncher @Inject constructor(
         }
     }
 
-    private fun extractVitaTitleId(filename: String): String? {
+    private fun extractVitaTitleId(romFile: File): String? {
+        val filename = romFile.nameWithoutExtension
+
         val bracketPattern = Regex("""\[([A-Z]{4}\d{5})\]""")
         bracketPattern.find(filename)?.let { return it.groupValues[1] }
 
         val prefixPattern = Regex("""^([A-Z]{4}\d{5})""")
         prefixPattern.find(filename)?.let { return it.groupValues[1] }
 
+        if (romFile.extension.equals("zip", ignoreCase = true)) {
+            extractTitleIdFromZip(romFile)?.let { return it }
+        }
+
         return null
+    }
+
+    private fun extractTitleIdFromZip(zipFile: File): String? {
+        val titleIdPattern = Regex("""^([A-Z]{4}\d{5})/?""")
+        return try {
+            java.util.zip.ZipFile(zipFile).use { zip ->
+                zip.entries().asSequence()
+                    .mapNotNull { entry ->
+                        titleIdPattern.find(entry.name)?.groupValues?.get(1)
+                    }
+                    .firstOrNull()
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to read zip file for title ID: ${zipFile.name}", e)
+            null
+        }
     }
 
     private fun getFileUri(file: File): Uri {

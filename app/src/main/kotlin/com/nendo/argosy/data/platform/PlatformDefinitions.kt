@@ -37,7 +37,7 @@ object PlatformDefinitions {
         PlatformDef("psx", "Sony PlayStation", "PS1", setOf("bin", "iso", "img", "chd", "pbp", "cue", "7z", "zip"), 30),
         PlatformDef("ps2", "Sony PlayStation 2", "PS2", setOf("iso", "bin", "chd", "gz", "cso"), 31),
         PlatformDef("psp", "Sony PlayStation Portable", "PSP", setOf("iso", "cso", "pbp"), 32),
-        PlatformDef("vita", "Sony PlayStation Vita", "Vita", setOf("vpk", "mai"), 33),
+        PlatformDef("vita", "Sony PlayStation Vita", "Vita", setOf("vpk", "mai", "zip"), 33),
 
         PlatformDef("tg16", "TurboGrafx-16", "TG16", setOf("pce"), 40),
         PlatformDef("tgcd", "TurboGrafx-CD", "TG-CD", setOf("chd", "cue", "ccd"), 41),
