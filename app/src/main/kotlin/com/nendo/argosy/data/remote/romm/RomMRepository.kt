@@ -504,9 +504,9 @@ class RomMRepository @Inject constructor(
     ): PlatformSyncResult {
         var added = 0
         var updated = 0
-        val seenIds = mutableSetOf<Long>()
-        val seenIgdbIds = mutableMapOf<Long, Long>()
-        val syncedRomsWithRA = mutableSetOf<Long>()
+        val seenRommIds = mutableSetOf<Long>()
+        val seenDedupKeys = mutableMapOf<String, Long>()
+        val romsWithRA = mutableSetOf<Long>()
         val multiDiscGroups = mutableListOf<MultiDiscGroup>()
         val processedDiscIds = mutableSetOf<Long>()
         var offset = 0
@@ -520,7 +520,7 @@ class RomMRepository @Inject constructor(
             )
 
             if (!romsResponse.isSuccessful) {
-                return PlatformSyncResult(added, updated, seenIds, multiDiscGroups,
+                return PlatformSyncResult(added, updated, seenRommIds, multiDiscGroups,
                     "Failed to fetch ROMs for ${platform.name}: ${romsResponse.code()}")
             }
 
@@ -534,29 +534,33 @@ class RomMRepository @Inject constructor(
             )
 
             for (rom in romsPage.items) {
-                if (rom.igdbId == null || !shouldSyncRom(rom, filters)) continue
+                if (!shouldSyncRom(rom, filters)) continue
 
-                val existingRomId = seenIgdbIds[rom.igdbId]
-                if (existingRomId != null) {
-                    val existingHasRA = syncedRomsWithRA.contains(existingRomId)
-                    val newHasRA = rom.raId != null || rom.raMetadata?.achievements?.isNotEmpty() == true
-                    if (!existingHasRA && newHasRA) {
-                        seenIds.remove(existingRomId)
-                        seenIgdbIds[rom.igdbId] = rom.id
-                        seenIds.add(rom.id)
-                        if (newHasRA) syncedRomsWithRA.add(rom.id)
-                        try {
-                            syncRom(rom, platform.slug)
-                            updated++
-                        } catch (_: Exception) {}
+                val dedupKey = getDedupKey(rom)
+                val hasRA = rom.raId != null || rom.raMetadata?.achievements?.isNotEmpty() == true
+
+                if (dedupKey != null) {
+                    val existingRomId = seenDedupKeys[dedupKey]
+                    if (existingRomId != null) {
+                        val existingHasRA = romsWithRA.contains(existingRomId)
+                        if (!existingHasRA && hasRA) {
+                            seenRommIds.remove(existingRomId)
+                            romsWithRA.remove(existingRomId)
+                            seenDedupKeys[dedupKey] = rom.id
+                            seenRommIds.add(rom.id)
+                            if (hasRA) romsWithRA.add(rom.id)
+                            try {
+                                syncRom(rom, platform.slug)
+                                updated++
+                            } catch (_: Exception) {}
+                        }
+                        continue
                     }
-                    continue
+                    seenDedupKeys[dedupKey] = rom.id
                 }
 
-                seenIgdbIds[rom.igdbId] = rom.id
-                seenIds.add(rom.id)
-                val hasRA = rom.raId != null || rom.raMetadata?.achievements?.isNotEmpty() == true
-                if (hasRA) syncedRomsWithRA.add(rom.id)
+                seenRommIds.add(rom.id)
+                if (hasRA) romsWithRA.add(rom.id)
 
                 try {
                     val (isNew, _) = syncRom(rom, platform.slug)
@@ -568,7 +572,7 @@ class RomMRepository @Inject constructor(
 
                         processedDiscIds.add(rom.id)
                         processedDiscIds.addAll(siblingIds)
-                        seenIds.addAll(siblingIds)
+                        seenRommIds.addAll(siblingIds)
 
                         multiDiscGroups.add(MultiDiscGroup(
                             primaryRommId = rom.id,
@@ -584,7 +588,16 @@ class RomMRepository @Inject constructor(
             offset += SYNC_PAGE_SIZE
         }
 
-        return PlatformSyncResult(added, updated, seenIds, multiDiscGroups)
+        return PlatformSyncResult(added, updated, seenRommIds, multiDiscGroups)
+    }
+
+    private fun getDedupKey(rom: RomMRom): String? {
+        return when {
+            rom.igdbId != null -> "igdb:${rom.igdbId}"
+            rom.mobyId != null -> "moby:${rom.mobyId}"
+            rom.raId != null -> "ra:${rom.raId}"
+            else -> null
+        }
     }
 
     private suspend fun consolidateMultiDiscGames(
