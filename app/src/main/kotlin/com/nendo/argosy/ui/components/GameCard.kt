@@ -309,8 +309,8 @@ fun GameCard(
 fun GameCardWithBadge(
     game: HomeGameUi,
     isFocused: Boolean,
-    badge: @Composable (() -> Unit)? = null,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    badge: @Composable (() -> Unit)? = null
 ) {
     Box(modifier = modifier) {
         GameCard(

@@ -360,10 +360,10 @@ private fun AppCard(
     icon: Drawable,
     label: String,
     isFocused: Boolean,
+    modifier: Modifier = Modifier,
     isReorderMode: Boolean = false,
     onClick: () -> Unit = {},
-    onLongClick: () -> Unit = {},
-    modifier: Modifier = Modifier
+    onLongClick: () -> Unit = {}
 ) {
     val backgroundColor = if (isFocused) {
         MaterialTheme.colorScheme.onSurface.copy(alpha = 0.15f)

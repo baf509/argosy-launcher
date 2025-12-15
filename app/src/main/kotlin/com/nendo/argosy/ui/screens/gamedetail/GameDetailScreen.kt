@@ -130,9 +130,9 @@ fun GameDetailScreen(
     val screenshotListState = rememberLazyListState()
     val achievementListState = rememberLazyListState()
 
-    var descriptionTopY by remember { mutableStateOf(0) }
-    var screenshotTopY by remember { mutableStateOf(0) }
-    var achievementTopY by remember { mutableStateOf(0) }
+    var descriptionTopY by remember { mutableIntStateOf(0) }
+    var screenshotTopY by remember { mutableIntStateOf(0) }
+    var achievementTopY by remember { mutableIntStateOf(0) }
 
     val game = uiState.game
     val hasDescription = game?.description?.isNotEmpty() == true
@@ -150,7 +150,7 @@ fun GameDetailScreen(
         }
     }
 
-    var currentSnapIndex by remember { mutableStateOf(0) }
+    var currentSnapIndex by remember { mutableIntStateOf(0) }
 
     fun getSnapTarget(state: SnapState): Int = when (state) {
         SnapState.TOP -> 0

@@ -35,8 +35,8 @@ import com.nendo.argosy.ui.theme.Dimens
 @Composable
 fun SyncOverlay(
     syncState: SyncState?,
-    gameTitle: String? = null,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    gameTitle: String? = null
 ) {
     val isVisible = syncState != null && syncState != SyncState.Idle
     val isActiveSync = syncState != null && syncState !is SyncState.Error
