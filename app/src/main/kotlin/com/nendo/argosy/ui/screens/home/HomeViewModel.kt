@@ -3,14 +3,8 @@ package com.nendo.argosy.ui.screens.home
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.nendo.argosy.data.cache.ImageCacheManager
 import com.nendo.argosy.data.download.DownloadManager
 import com.nendo.argosy.data.download.DownloadState
-import com.nendo.argosy.data.emulator.EmulatorDetector
-import com.nendo.argosy.data.emulator.EmulatorRegistry
-import com.nendo.argosy.data.emulator.LaunchResult
-import com.nendo.argosy.data.emulator.PlaySessionTracker
-import com.nendo.argosy.data.emulator.SavePathRegistry
 import com.nendo.argosy.data.local.dao.GameDao
 import com.nendo.argosy.data.local.dao.PlatformDao
 import com.nendo.argosy.data.local.entity.GameEntity
@@ -19,12 +13,8 @@ import com.nendo.argosy.data.model.GameSource
 import com.nendo.argosy.data.preferences.UserPreferencesRepository
 import com.nendo.argosy.data.remote.romm.RomMRepository
 import com.nendo.argosy.data.remote.romm.RomMResult
-import com.nendo.argosy.domain.model.SyncState
-import com.nendo.argosy.domain.usecase.download.DownloadGameUseCase
+import com.nendo.argosy.domain.usecase.achievement.FetchAchievementsUseCase
 import com.nendo.argosy.domain.usecase.download.DownloadResult
-import com.nendo.argosy.domain.usecase.game.DeleteGameUseCase
-import com.nendo.argosy.domain.usecase.game.LaunchGameUseCase
-import com.nendo.argosy.domain.usecase.game.LaunchWithSyncUseCase
 import com.nendo.argosy.domain.usecase.sync.SyncLibraryResult
 import com.nendo.argosy.domain.usecase.sync.SyncLibraryUseCase
 import com.nendo.argosy.ui.input.InputHandler
@@ -36,17 +26,16 @@ import com.nendo.argosy.ui.notification.NotificationManager
 import com.nendo.argosy.ui.notification.showError
 import com.nendo.argosy.ui.notification.showSuccess
 import com.nendo.argosy.ui.screens.common.GameActionsDelegate
+import com.nendo.argosy.ui.screens.common.GameLaunchDelegate
+import com.nendo.argosy.ui.screens.common.SyncOverlayState
 import android.content.Intent
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
-import kotlinx.coroutines.flow.asSharedFlow
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
@@ -123,11 +112,6 @@ sealed class HomeRow {
     data object Continue : HomeRow()
 }
 
-data class SyncOverlayState(
-    val gameTitle: String,
-    val syncState: SyncState
-)
-
 data class HomeUiState(
     val platforms: List<HomePlatformUi> = emptyList(),
     val platformItems: List<HomeRowItem> = emptyList(),
@@ -149,9 +133,9 @@ data class HomeUiState(
 ) {
     val availableRows: List<HomeRow>
         get() = buildList {
+            if (recentGames.isNotEmpty()) add(HomeRow.Continue)
             if (favoriteGames.isNotEmpty()) add(HomeRow.Favorites)
             platforms.forEachIndexed { index, _ -> add(HomeRow.Platform(index)) }
-            if (recentGames.isNotEmpty()) add(HomeRow.Continue)
         }
 
     val currentPlatform: HomePlatformUi?
@@ -196,16 +180,11 @@ class HomeViewModel @Inject constructor(
     private val notificationManager: NotificationManager,
     private val gameNavigationContext: GameNavigationContext,
     private val syncLibraryUseCase: SyncLibraryUseCase,
-    private val launchGameUseCase: LaunchGameUseCase,
-    private val launchWithSyncUseCase: LaunchWithSyncUseCase,
     private val downloadManager: DownloadManager,
     private val soundManager: SoundFeedbackManager,
     private val gameActions: GameActionsDelegate,
-    private val achievementDao: com.nendo.argosy.data.local.dao.AchievementDao,
-    private val imageCacheManager: ImageCacheManager,
-    private val playSessionTracker: PlaySessionTracker,
-    private val emulatorDetector: EmulatorDetector,
-    private val emulatorConfigDao: com.nendo.argosy.data.local.dao.EmulatorConfigDao
+    private val gameLaunchDelegate: GameLaunchDelegate,
+    private val fetchAchievementsUseCase: FetchAchievementsUseCase
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(restoreInitialState())
@@ -224,6 +203,15 @@ class HomeViewModel @Inject constructor(
         loadData()
         initializeRomM()
         observeBackgroundSettings()
+        observeSyncOverlay()
+    }
+
+    private fun observeSyncOverlay() {
+        viewModelScope.launch {
+            gameLaunchDelegate.syncOverlayState.collect { overlayState ->
+                _uiState.update { it.copy(syncOverlayState = overlayState) }
+            }
+        }
     }
 
     private fun observeBackgroundSettings() {
@@ -431,64 +419,7 @@ class HomeViewModel @Inject constructor(
     }
 
     fun onResume() {
-        val session = playSessionTracker.activeSession.value
-        if (session == null) {
-            android.util.Log.d("HomeViewModel", "onResume: no active session")
-            return
-        }
-        if (_uiState.value.syncOverlayState != null) {
-            android.util.Log.d("HomeViewModel", "onResume: overlay already showing")
-            return
-        }
-
-        val emulatorId = resolveEmulatorId(session.emulatorPackage)
-        android.util.Log.d("HomeViewModel", "onResume: package=${session.emulatorPackage}, emulatorId=$emulatorId")
-        if (emulatorId == null) return
-
-        val config = SavePathRegistry.getConfig(emulatorId)
-        android.util.Log.d("HomeViewModel", "onResume: saveConfig=$config")
-        if (config == null) {
-            playSessionTracker.endSession()
-            return
-        }
-
-        viewModelScope.launch {
-            val game = gameDao.getById(session.gameId)
-            val gameTitle = game?.title ?: "Game"
-
-            android.util.Log.d("HomeViewModel", "onResume: showing overlay for $gameTitle")
-            _uiState.update {
-                it.copy(syncOverlayState = SyncOverlayState(gameTitle, SyncState.Uploading))
-            }
-
-            val syncStartTime = System.currentTimeMillis()
-
-            playSessionTracker.endSession()
-
-            val elapsed = System.currentTimeMillis() - syncStartTime
-            val minDisplayTime = 2000L
-            if (elapsed < minDisplayTime) {
-                delay(minDisplayTime - elapsed)
-            }
-
-            _uiState.update { it.copy(syncOverlayState = null) }
-        }
-    }
-
-    private fun resolveEmulatorId(packageName: String): String? {
-        EmulatorRegistry.getByPackage(packageName)?.let { return it.id }
-        EmulatorRegistry.findFamilyForPackage(packageName)?.let { return it.baseId }
-        return emulatorDetector.getByPackage(packageName)?.id
-    }
-
-    private suspend fun getEmulatorPackageForGame(gameId: Long, platformId: String): String? {
-        val config = emulatorConfigDao.getByGameId(gameId)
-            ?: emulatorConfigDao.getDefaultForPlatform(platformId)
-        if (config?.packageName != null) return config.packageName
-        if (emulatorDetector.installedEmulators.value.isEmpty()) {
-            emulatorDetector.detectEmulators()
-        }
-        return emulatorDetector.getPreferredEmulator(platformId)?.def?.packageName
+        gameLaunchDelegate.handleSessionEnd(viewModelScope)
     }
 
     private fun loadGamesForPlatform(platformId: String, platformIndex: Int) {
@@ -796,72 +727,9 @@ class HomeViewModel @Inject constructor(
     }
 
     fun launchGame(gameId: Long) {
-        if (_uiState.value.syncOverlayState != null) return
-
         saveCurrentState()
-        viewModelScope.launch {
-            val game = gameDao.getById(gameId) ?: return@launch
-            val gameTitle = game.title
-
-            val emulatorPackage = getEmulatorPackageForGame(gameId, game.platformId)
-            val emulatorId = emulatorPackage?.let { resolveEmulatorId(it) }
-            val prefs = preferencesRepository.preferences.first()
-            val canSync = emulatorId != null && SavePathRegistry.canSyncWithSettings(
-                emulatorId,
-                prefs.saveSyncEnabled,
-                prefs.experimentalFolderSaveSync
-            )
-
-            val syncStartTime = if (canSync) {
-                _uiState.update {
-                    it.copy(syncOverlayState = SyncOverlayState(gameTitle, SyncState.CheckingConnection))
-                }
-                System.currentTimeMillis()
-            } else null
-
-            launchWithSyncUseCase.invoke(gameId).collect { state ->
-                if (canSync && state != SyncState.Skipped && state != SyncState.Idle) {
-                    _uiState.update {
-                        it.copy(syncOverlayState = SyncOverlayState(gameTitle, state))
-                    }
-                }
-            }
-
-            syncStartTime?.let { startTime ->
-                val elapsed = System.currentTimeMillis() - startTime
-                val minDisplayTime = 2000L
-                if (elapsed < minDisplayTime) {
-                    delay(minDisplayTime - elapsed)
-                }
-            }
-
-            _uiState.update { it.copy(syncOverlayState = null) }
-
-            when (val result = launchGameUseCase(gameId)) {
-                is LaunchResult.Success -> {
-                    soundManager.play(SoundType.LAUNCH_GAME)
-                    _events.emit(HomeEvent.LaunchGame(result.intent))
-                }
-                is LaunchResult.NoEmulator -> {
-                    notificationManager.showError("No emulator installed for this platform")
-                }
-                is LaunchResult.NoRomFile -> {
-                    notificationManager.showError("ROM file not found")
-                }
-                is LaunchResult.NoSteamLauncher -> {
-                    notificationManager.showError("Steam launcher not installed")
-                }
-                is LaunchResult.NoCore -> {
-                    notificationManager.showError("No compatible RetroArch core installed for ${result.platformId}")
-                }
-                is LaunchResult.MissingDiscs -> {
-                    val discText = result.missingDiscNumbers.joinToString(", ")
-                    notificationManager.showError("Missing discs: $discText. View game details to repair.")
-                }
-                is LaunchResult.Error -> {
-                    notificationManager.showError(result.message)
-                }
-            }
+        gameLaunchDelegate.launchGame(viewModelScope, gameId) { intent ->
+            viewModelScope.launch { _events.emit(HomeEvent.LaunchGame(intent)) }
         }
     }
 
@@ -1016,62 +884,29 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch {
             val entity = gameDao.getById(game.id) ?: return@launch
             val rommId = entity.rommId ?: return@launch
-            fetchAndCacheAchievements(rommId, game.id)
+            val counts = fetchAchievementsUseCase(rommId, game.id) ?: return@launch
+            updateAchievementCountsInState(game.id, counts.total, counts.earned)
         }
     }
 
-    private suspend fun fetchAndCacheAchievements(rommId: Long, gameId: Long) {
-        when (val result = romMRepository.getRom(rommId)) {
-            is RomMResult.Success -> {
-                val rom = result.data
-                val apiAchievements = rom.raMetadata?.achievements ?: return
-                if (apiAchievements.isNotEmpty()) {
-                    val earnedBadgeIds = rom.raId?.let { romMRepository.getEarnedBadgeIds(it) } ?: emptySet()
-                    val entities = apiAchievements.map { achievement ->
-                        com.nendo.argosy.data.local.entity.AchievementEntity(
-                            gameId = gameId,
-                            raId = achievement.raId,
-                            title = achievement.title,
-                            description = achievement.description,
-                            points = achievement.points,
-                            type = achievement.type,
-                            badgeUrl = achievement.badgeUrl,
-                            badgeUrlLock = achievement.badgeUrlLock,
-                            isUnlocked = achievement.badgeId in earnedBadgeIds
-                        )
-                    }
-                    achievementDao.replaceForGame(gameId, entities)
-                    val earnedCount = entities.count { it.isUnlocked }
-                    gameDao.updateAchievementCount(gameId, entities.size, earnedCount)
-
-                    val savedAchievements = achievementDao.getByGameId(gameId)
-                    savedAchievements.forEach { achievement ->
-                        if (achievement.cachedBadgeUrl == null && achievement.badgeUrl != null) {
-                            imageCacheManager.queueBadgeCache(achievement.id, achievement.badgeUrl, achievement.badgeUrlLock)
-                        }
-                    }
-
-                    _uiState.update { state ->
-                        state.copy(
-                            recentGames = state.recentGames.map {
-                                if (it.id == gameId) it.copy(achievementCount = entities.size, earnedAchievementCount = earnedCount) else it
-                            },
-                            favoriteGames = state.favoriteGames.map {
-                                if (it.id == gameId) it.copy(achievementCount = entities.size, earnedAchievementCount = earnedCount) else it
-                            },
-                            platformItems = state.platformItems.map { item ->
-                                when (item) {
-                                    is HomeRowItem.Game -> if (item.game.id == gameId) {
-                                        HomeRowItem.Game(item.game.copy(achievementCount = entities.size, earnedAchievementCount = earnedCount))
-                                    } else item
-                                    is HomeRowItem.ViewAll -> item
-                                }
-                            }
-                        )
+    private fun updateAchievementCountsInState(gameId: Long, total: Int, earned: Int) {
+        _uiState.update { state ->
+            state.copy(
+                recentGames = state.recentGames.map {
+                    if (it.id == gameId) it.copy(achievementCount = total, earnedAchievementCount = earned) else it
+                },
+                favoriteGames = state.favoriteGames.map {
+                    if (it.id == gameId) it.copy(achievementCount = total, earnedAchievementCount = earned) else it
+                },
+                platformItems = state.platformItems.map { item ->
+                    when (item) {
+                        is HomeRowItem.Game -> if (item.game.id == gameId) {
+                            HomeRowItem.Game(item.game.copy(achievementCount = total, earnedAchievementCount = earned))
+                        } else item
+                        is HomeRowItem.ViewAll -> item
                     }
                 }
-            }
-            is RomMResult.Error -> { }
+            )
         }
     }
 }

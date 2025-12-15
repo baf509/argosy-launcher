@@ -11,7 +11,6 @@ import com.nendo.argosy.data.local.entity.PendingSyncEntity
 import com.nendo.argosy.data.local.entity.PlatformEntity
 import com.nendo.argosy.data.model.GameSource
 import com.nendo.argosy.data.platform.PlatformDefinitions
-import com.nendo.argosy.data.preferences.RegionFilterMode
 import com.nendo.argosy.data.preferences.SyncFilterPreferences
 import com.nendo.argosy.data.preferences.UserPreferencesRepository
 import com.squareup.moshi.Moshi
@@ -36,28 +35,6 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 private const val SYNC_PAGE_SIZE = 100
-
-sealed class RomMResult<out T> {
-    data class Success<T>(val data: T) : RomMResult<T>()
-    data class Error(val message: String, val code: Int? = null) : RomMResult<Nothing>()
-}
-
-data class SyncProgress(
-    val isSyncing: Boolean = false,
-    val currentPlatform: String = "",
-    val platformsTotal: Int = 0,
-    val platformsDone: Int = 0,
-    val gamesTotal: Int = 0,
-    val gamesDone: Int = 0
-)
-
-data class SyncResult(
-    val platformsSynced: Int,
-    val gamesAdded: Int,
-    val gamesUpdated: Int,
-    val gamesDeleted: Int,
-    val errors: List<String>
-)
 
 @Singleton
 class RomMRepository @Inject constructor(
@@ -301,7 +278,7 @@ class RomMRepository @Inject constructor(
             gameCount = remote.romCount,
             isVisible = existing?.isVisible ?: true,
             logoPath = logoUrl ?: existing?.logoPath,
-            sortOrder = platformDef?.sortOrder ?: existing?.sortOrder ?: 0,
+            sortOrder = platformDef?.sortOrder ?: existing?.sortOrder ?: 9999,
             lastScanned = existing?.lastScanned
         )
 
@@ -348,7 +325,7 @@ class RomMRepository @Inject constructor(
             id = existing?.id ?: 0,
             platformId = platformSlug,
             title = rom.name,
-            sortTitle = createSortTitle(rom.name),
+            sortTitle = RomMUtils.createSortTitle(rom.name),
             localPath = existing?.localPath,
             rommId = rom.id,
             igdbId = rom.igdbId,
@@ -390,111 +367,12 @@ class RomMRepository @Inject constructor(
         return if (path.startsWith("http")) path else "$baseUrl$path"
     }
 
-    private fun createSortTitle(title: String): String {
-        val lower = title.lowercase()
-        return when {
-            lower.startsWith("the ") -> title.drop(4)
-            lower.startsWith("a ") -> title.drop(2)
-            lower.startsWith("an ") -> title.drop(3)
-            else -> title
-        }.lowercase()
-    }
-
-    private fun shouldSyncRom(rom: RomMRom, filters: SyncFilterPreferences): Boolean {
-        if (!passesExtensionFilter(rom)) return false
-        if (!passesBadDumpFilter(rom)) return false
-        if (!passesRegionFilter(rom, filters)) return false
-        if (!passesRevisionFilter(rom, filters)) return false
-        return true
-    }
-
-    private fun passesExtensionFilter(rom: RomMRom): Boolean {
-        val fileName = rom.fileName ?: return true
-        val extension = fileName.substringAfterLast('.', "").lowercase()
-        if (extension.isEmpty()) return true
-
-        val platformDef = PlatformDefinitions.getById(rom.platformSlug) ?: return true
-        if (platformDef.extensions.isEmpty()) return true
-
-        return extension in platformDef.extensions
-    }
-
-    private fun passesBadDumpFilter(rom: RomMRom): Boolean {
-        val name = rom.name.lowercase()
-        val fileName = rom.fileName?.lowercase() ?: ""
-        if (BAD_DUMP_REGEX.containsMatchIn(name) || BAD_DUMP_REGEX.containsMatchIn(fileName)) return false
-        return true
-    }
-
-    private fun passesRegionFilter(rom: RomMRom, filters: SyncFilterPreferences): Boolean {
-        val romRegions = rom.regions
-        if (romRegions.isNullOrEmpty()) return true
-
-        val matchesEnabled = romRegions.any { region ->
-            filters.enabledRegions.any { enabled ->
-                region.equals(enabled, ignoreCase = true)
-            }
-        }
-
-        return when (filters.regionMode) {
-            RegionFilterMode.INCLUDE -> matchesEnabled
-            RegionFilterMode.EXCLUDE -> !matchesEnabled
-        }
-    }
-
-    private fun passesRevisionFilter(rom: RomMRom, filters: SyncFilterPreferences): Boolean {
-        val revision = rom.revision?.lowercase() ?: ""
-        val name = rom.name.lowercase()
-        val tags = rom.tags?.map { it.lowercase() } ?: emptyList()
-
-        if (filters.excludeBeta) {
-            if (revision.contains("beta") || name.contains("(beta)")) return false
-        }
-        if (filters.excludePrototype) {
-            if (revision.contains("proto") || name.contains("(proto)")) return false
-        }
-        if (filters.excludeDemo) {
-            if (revision.contains("demo") || name.contains("(demo)") || name.contains("(sample)")) return false
-        }
-        if (filters.excludeHack) {
-            if (isHack(name, revision, tags)) return false
-        }
-
-        return true
-    }
-
-    private fun isHack(name: String, revision: String, tags: List<String>): Boolean {
-        if (revision.contains("hack")) return true
-        if (tags.any { it.contains("hack") }) return true
-        if (NO_INTRO_HACK_REGEX.containsMatchIn(name)) return true
-        if (HACK_BRACKET_REGEX.containsMatchIn(name)) return true
-        if (HACK_PAREN_REGEX.containsMatchIn(name)) return true
-        return false
-    }
-
-    companion object {
-        // Matches No-Intro style hack tags: [h], [h1], [hC], [h M], etc.
-        private val NO_INTRO_HACK_REGEX = Regex("\\[h[0-9a-z ]*\\]")
-        // Matches [hack], [some hack], etc. - but not game titles like ".hack" since that's outside brackets
-        private val HACK_BRACKET_REGEX = Regex("\\[.*\\bhack\\b.*\\]")
-        // Matches (hack), (undub hack), etc. - but not ".hack (USA)" since "(USA)" doesn't contain "hack"
-        private val HACK_PAREN_REGEX = Regex("\\(.*\\bhack\\b.*\\)")
-        // Matches bad dumps: [b], [b1], [o], [o1] (overdumps), [!p] (pending), [t] (trained), [f] (fixed)
-        private val BAD_DUMP_REGEX = Regex("\\[[boftpBOFTP][0-9]*\\]")
-    }
-
     private data class PlatformSyncResult(
         val added: Int,
         val updated: Int,
         val seenIds: Set<Long>,
         val multiDiscGroups: List<MultiDiscGroup>,
         val error: String? = null
-    )
-
-    data class MultiDiscGroup(
-        val primaryRommId: Long,
-        val siblingRommIds: List<Long>,
-        val platformSlug: String
     )
 
     private suspend fun syncPlatformRoms(
@@ -534,9 +412,9 @@ class RomMRepository @Inject constructor(
             )
 
             for (rom in romsPage.items) {
-                if (!shouldSyncRom(rom, filters)) continue
+                if (!RomMSyncFilter.shouldSyncRom(rom, filters)) continue
 
-                val dedupKey = getDedupKey(rom)
+                val dedupKey = RomMUtils.getDedupKey(rom)
                 val hasRA = rom.raId != null || rom.raMetadata?.achievements?.isNotEmpty() == true
 
                 if (dedupKey != null) {
@@ -589,15 +467,6 @@ class RomMRepository @Inject constructor(
         }
 
         return PlatformSyncResult(added, updated, seenRommIds, multiDiscGroups)
-    }
-
-    private fun getDedupKey(rom: RomMRom): String? {
-        return when {
-            rom.igdbId != null -> "igdb:${rom.igdbId}"
-            rom.mobyId != null -> "moby:${rom.mobyId}"
-            rom.raId != null -> "ra:${rom.raId}"
-            else -> null
-        }
     }
 
     private suspend fun consolidateMultiDiscGames(
@@ -863,7 +732,7 @@ class RomMRepository @Inject constructor(
 
             val updatedGame = game.copy(
                 title = rom.name,
-                sortTitle = createSortTitle(rom.name),
+                sortTitle = RomMUtils.createSortTitle(rom.name),
                 coverPath = coverUrl,
                 backgroundPath = backgroundUrl,
                 screenshotPaths = screenshotUrls.joinToString(","),
@@ -929,11 +798,6 @@ class RomMRepository @Inject constructor(
             RomMResult.Error(e.message ?: "Failed to refresh RA progression")
         }
     }
-
-    data class DownloadResponse(
-        val body: okhttp3.ResponseBody,
-        val isPartialContent: Boolean
-    )
 
     suspend fun downloadRom(
         romId: Long,

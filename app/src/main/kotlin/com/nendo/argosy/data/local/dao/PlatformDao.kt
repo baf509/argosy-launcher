@@ -11,19 +11,19 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface PlatformDao {
 
-    @Query("SELECT * FROM platforms WHERE isVisible = 1 AND gameCount > 0 ORDER BY sortOrder ASC")
+    @Query("SELECT * FROM platforms WHERE isVisible = 1 AND gameCount > 0 ORDER BY sortOrder ASC, name ASC")
     fun observeVisiblePlatforms(): Flow<List<PlatformEntity>>
 
-    @Query("SELECT * FROM platforms ORDER BY sortOrder ASC")
+    @Query("SELECT * FROM platforms ORDER BY sortOrder ASC, name ASC")
     fun observeAllPlatforms(): Flow<List<PlatformEntity>>
 
     @Query("SELECT * FROM platforms WHERE id = :id")
     suspend fun getById(id: String): PlatformEntity?
 
-    @Query("SELECT * FROM platforms WHERE gameCount > 0 AND isVisible = 1 ORDER BY sortOrder ASC")
+    @Query("SELECT * FROM platforms WHERE gameCount > 0 AND isVisible = 1 ORDER BY sortOrder ASC, name ASC")
     fun observePlatformsWithGames(): Flow<List<PlatformEntity>>
 
-    @Query("SELECT * FROM platforms WHERE gameCount > 0 AND isVisible = 1 ORDER BY sortOrder ASC")
+    @Query("SELECT * FROM platforms WHERE gameCount > 0 AND isVisible = 1 ORDER BY sortOrder ASC, name ASC")
     suspend fun getPlatformsWithGames(): List<PlatformEntity>
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
