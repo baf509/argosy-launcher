@@ -5,8 +5,6 @@ An emulation-focused launcher for Android retro handhelds with native RomM integ
 [![Build](https://github.com/nendotools/argosy-launcher/actions/workflows/build.yml/badge.svg)](https://github.com/nendotools/argosy-launcher/actions/workflows/build.yml)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Android](https://img.shields.io/badge/Android-8.0+-green.svg)](https://developer.android.com/about/versions/oreo)
-[![Kotlin](https://img.shields.io/badge/Kotlin-1.9-purple.svg)](https://kotlinlang.org)
-[![Jetpack Compose](https://img.shields.io/badge/Jetpack%20Compose-1.5-4285F4.svg)](https://developer.android.com/jetpack/compose)
 
 ## What is Argosy?
 
@@ -19,6 +17,9 @@ First-class client for RomM self-hosted game library. Sync your entire collectio
 
 ### Hassle-Free ROM Management
 No manual folder organization required. Games are automatically sorted by platform when downloaded from your RomM server.
+
+### Save Sync
+Sync your saves across devices through your RomM server. Supports multiple save slots for managing different playthroughs.
 
 ### Library Filtering
 Browse your collection by genre, player count, franchise, or region. Find multiplayer games for a session or filter to your favorite series.
@@ -35,38 +36,27 @@ Built for controller navigation from the ground up. Browse your library, downloa
 ### Image Caching
 Cache all images locally for offline browsing. Access your library with full cover art and metadata even without a network connection.
 
-### Steam Games (Experimental)
+### Steam Games
 Index and launch Steam games installed on your device. Supports games installed via GameHub or GameNative.
 
 ### App Launcher
 Quick access to installed emulators and other apps without leaving the launcher.
 
-## Supported Platforms
-
-All your favorite classic systems. If RomM supports it, Argosy can display and launch it.
-
 ## Screenshots
 
-### Home Screen
-<!-- Main interface with gamepad navigation -->
+[IMAGE: Home screen with gamepad navigation]
 
-### Game Library
-<!-- Cover art grid organized by platform -->
+[IMAGE: Game library with cover art grid]
 
-### Library Filtering
-<!-- Browse by genre, franchise, player count, region -->
+[IMAGE: Library filtering by genre, franchise, player count]
 
-### Game Details
-<!-- IGDB metadata, launch options -->
+[IMAGE: Game details with IGDB metadata]
 
-### Downloads
-<!-- Download queue and progress tracking -->
+[IMAGE: Download queue and progress]
 
-### Settings
-<!-- RomM server connection setup -->
+[IMAGE: Settings with RomM server connection]
 
-### Apps
-<!-- Installed emulators and apps view -->
+[IMAGE: Installed emulators and apps]
 
 ## Getting Started
 
