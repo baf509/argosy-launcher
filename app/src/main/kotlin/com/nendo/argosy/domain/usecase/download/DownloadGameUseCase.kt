@@ -119,7 +119,7 @@ class DownloadGameUseCase @Inject constructor(
     companion object {
         private val INVALID_ROM_EXTENSIONS = setOf(
             "png", "jpg", "jpeg", "gif", "webp", "bmp",
-            "html", "htm", "txt", "md", "pdf"
+            "html", "htm", "txt", "pdf"
         )
     }
 }
