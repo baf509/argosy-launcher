@@ -403,6 +403,13 @@ class SettingsViewModel @Inject constructor(
                 syncDelegate.loadLibrarySettings(viewModelScope)
             }
             SettingsSection.SYNC_SETTINGS -> syncDelegate.loadLibrarySettings(viewModelScope)
+            SettingsSection.SYNC_FILTERS -> {
+                syncDelegate.loadLibrarySettings(viewModelScope)
+                viewModelScope.launch {
+                    val platforms = platformDao.observeAllPlatforms().first()
+                    syncDelegate.updateState(syncDelegate.state.value.copy(allPlatforms = platforms))
+                }
+            }
             SettingsSection.STEAM_SETTINGS -> steamDelegate.loadSteamSettings(context, viewModelScope)
             else -> {}
         }
@@ -486,6 +493,10 @@ class SettingsViewModel @Inject constructor(
                 dismissRegionPicker()
                 true
             }
+            state.syncSettings.showPlatformPicker -> {
+                dismissPlatformPicker()
+                true
+            }
             state.emulators.showEmulatorPicker -> {
                 dismissEmulatorPicker()
                 true
@@ -528,6 +539,10 @@ class SettingsViewModel @Inject constructor(
             syncDelegate.moveRegionPickerFocus(delta)
             return
         }
+        if (_uiState.value.syncSettings.showPlatformPicker) {
+            syncDelegate.movePlatformPickerFocus(delta)
+            return
+        }
         if (_uiState.value.emulators.showEmulatorPicker) {
             emulatorDelegate.moveEmulatorPickerFocus(delta)
             return
@@ -550,7 +565,7 @@ class SettingsViewModel @Inject constructor(
                     }
                 }
                 SettingsSection.SYNC_SETTINGS -> if (state.syncSettings.saveSyncEnabled) 3 else 2
-                SettingsSection.SYNC_FILTERS -> 6
+                SettingsSection.SYNC_FILTERS -> 7
                 SettingsSection.STEAM_SETTINGS -> 2 + state.steam.installedLaunchers.size
                 SettingsSection.STORAGE -> {
                     val baseItemCount = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) 4 else 3
@@ -780,6 +795,28 @@ class SettingsViewModel @Inject constructor(
 
     fun setDeleteOrphans(delete: Boolean) {
         syncDelegate.setDeleteOrphans(viewModelScope, delete)
+    }
+
+    fun showPlatformPicker() {
+        viewModelScope.launch {
+            val platforms = platformDao.observeAllPlatforms().first()
+                .filter { it.gameCount > 0 }
+            syncDelegate.showPlatformPicker(platforms)
+        }
+        soundManager.play(SoundType.OPEN_MODAL)
+    }
+
+    fun dismissPlatformPicker() {
+        syncDelegate.dismissPlatformPicker()
+        soundManager.play(SoundType.CLOSE_MODAL)
+    }
+
+    fun togglePlatformVisibility(platformId: String) {
+        syncDelegate.togglePlatformVisibility(viewModelScope, platformId)
+    }
+
+    fun confirmPlatformPickerSelection() {
+        syncDelegate.confirmPlatformPickerSelection(viewModelScope)
     }
 
     fun toggleSyncScreenshots() {
@@ -1192,6 +1229,7 @@ class SettingsViewModel @Inject constructor(
                     4 -> { setExcludeDemo(!state.syncSettings.syncFilters.excludeDemo); return InputResult.handled(SoundType.TOGGLE) }
                     5 -> { setExcludeHack(!state.syncSettings.syncFilters.excludeHack); return InputResult.handled(SoundType.TOGGLE) }
                     6 -> { setDeleteOrphans(!state.syncSettings.syncFilters.deleteOrphans); return InputResult.handled(SoundType.TOGGLE) }
+                    7 -> showPlatformPicker()
                 }
                 InputResult.HANDLED
             }

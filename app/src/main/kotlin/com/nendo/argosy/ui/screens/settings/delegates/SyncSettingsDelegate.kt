@@ -4,6 +4,7 @@ import android.os.Build
 import android.os.Environment
 import com.nendo.argosy.data.cache.ImageCacheManager
 import com.nendo.argosy.data.local.dao.PendingSaveSyncDao
+import com.nendo.argosy.data.local.dao.PlatformDao
 import com.nendo.argosy.data.preferences.RegionFilterMode
 import com.nendo.argosy.data.preferences.SyncFilterPreferences
 import com.nendo.argosy.data.preferences.UserPreferencesRepository
@@ -28,7 +29,8 @@ class SyncSettingsDelegate @Inject constructor(
     private val saveSyncRepository: SaveSyncRepository,
     private val pendingSaveSyncDao: PendingSaveSyncDao,
     private val imageCacheManager: ImageCacheManager,
-    private val notificationManager: NotificationManager
+    private val notificationManager: NotificationManager,
+    private val platformDao: PlatformDao
 ) {
     private val _state = MutableStateFlow(SyncSettingsState())
     val state: StateFlow<SyncSettingsState> = _state.asStateFlow()
@@ -96,6 +98,38 @@ class SyncSettingsDelegate @Inject constructor(
             _state.update {
                 it.copy(syncFilters = it.syncFilters.copy(enabledRegions = updated))
             }
+        }
+    }
+
+    fun showPlatformPicker(platforms: List<com.nendo.argosy.data.local.entity.PlatformEntity>) {
+        _state.update { it.copy(showPlatformPicker = true, platformPickerFocusIndex = 0, allPlatforms = platforms) }
+    }
+
+    fun dismissPlatformPicker() {
+        _state.update { it.copy(showPlatformPicker = false, platformPickerFocusIndex = 0) }
+    }
+
+    fun movePlatformPickerFocus(delta: Int) {
+        _state.update { state ->
+            val maxIndex = state.allPlatforms.size - 1
+            val newIndex = (state.platformPickerFocusIndex + delta).coerceIn(0, maxIndex)
+            state.copy(platformPickerFocusIndex = newIndex)
+        }
+    }
+
+    fun confirmPlatformPickerSelection(scope: CoroutineScope) {
+        val state = _state.value
+        val platform = state.allPlatforms.getOrNull(state.platformPickerFocusIndex) ?: return
+        togglePlatformVisibility(scope, platform.id)
+    }
+
+    fun togglePlatformVisibility(scope: CoroutineScope, platformId: String) {
+        scope.launch {
+            val platform = platformDao.getById(platformId) ?: return@launch
+            platformDao.updateVisibility(platformId, !platform.isVisible)
+            // Reload platforms list to refresh UI
+            val updatedPlatforms = platformDao.observeAllPlatforms().first()
+            _state.update { it.copy(allPlatforms = updatedPlatforms) }
         }
     }
 

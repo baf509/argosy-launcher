@@ -19,6 +19,7 @@ import com.nendo.argosy.ui.components.CyclePreference
 import com.nendo.argosy.ui.components.SwitchPreference
 import com.nendo.argosy.ui.screens.settings.SettingsUiState
 import com.nendo.argosy.ui.screens.settings.SettingsViewModel
+import com.nendo.argosy.ui.screens.settings.components.PlatformPickerPopup
 import com.nendo.argosy.ui.screens.settings.components.RegionPickerPopup
 import com.nendo.argosy.ui.theme.Dimens
 import com.nendo.argosy.ui.theme.Motion
@@ -31,12 +32,12 @@ fun SyncFiltersSection(
     val listState = rememberLazyListState()
 
     val modalBlur by animateDpAsState(
-        targetValue = if (uiState.syncSettings.showRegionPicker) Motion.blurRadiusModal else 0.dp,
+        targetValue = if (uiState.syncSettings.showRegionPicker || uiState.syncSettings.showPlatformPicker) Motion.blurRadiusModal else 0.dp,
         animationSpec = Motion.focusSpringDp,
         label = "regionPickerBlur"
     )
 
-    val maxIndex = 6
+    val maxIndex = 7
 
     LaunchedEffect(uiState.focusedIndex) {
         if (uiState.focusedIndex in 0..maxIndex) {
@@ -121,6 +122,16 @@ fun SyncFiltersSection(
                     onToggle = { viewModel.setDeleteOrphans(it) }
                 )
             }
+            item {
+                val visibleCount = uiState.syncSettings.allPlatforms.count { it.isVisible }
+                val totalCount = uiState.syncSettings.allPlatforms.size
+                ActionPreference(
+                    title = "Platform Visibility",
+                    subtitle = "$visibleCount of $totalCount visible",
+                    isFocused = uiState.focusedIndex == 7,
+                    onClick = { viewModel.showPlatformPicker() }
+                )
+            }
         }
 
         if (uiState.syncSettings.showRegionPicker) {
@@ -129,6 +140,15 @@ fun SyncFiltersSection(
                 focusIndex = uiState.syncSettings.regionPickerFocusIndex,
                 onToggle = { viewModel.toggleRegion(it) },
                 onDismiss = { viewModel.dismissRegionPicker() }
+            )
+        }
+
+        if (uiState.syncSettings.showPlatformPicker) {
+            PlatformPickerPopup(
+                platforms = uiState.syncSettings.allPlatforms,
+                focusIndex = uiState.syncSettings.platformPickerFocusIndex,
+                onToggle = { viewModel.togglePlatformVisibility(it) },
+                onDismiss = { viewModel.dismissPlatformPicker() }
             )
         }
     }

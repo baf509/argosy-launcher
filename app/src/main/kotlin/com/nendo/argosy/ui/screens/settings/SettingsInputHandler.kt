@@ -183,6 +183,11 @@ class SettingsInputHandler(
             return InputResult.handled(SoundType.TOGGLE)
         }
 
+        if (state.syncSettings.showPlatformPicker) {
+            viewModel.confirmPlatformPickerSelection()
+            return InputResult.handled(SoundType.TOGGLE)
+        }
+
         if (state.emulators.showEmulatorPicker) {
             viewModel.confirmEmulatorPickerSelection()
             return InputResult.HANDLED
